@@ -46,6 +46,9 @@ const PRESSED: Color32 = Color32::from_rgb(240, 240, 245);
 /// Width of that outline, as a fraction of a cell.
 const PRESSED_WIDTH: f32 = 0.055;
 
+/// Exponent lifting drawn colours, so flat fills read as brightly as lit LEDs.
+const GAMMA: f32 = 1.0 / 2.2;
+
 /// Seconds a pad must be held for the aftertouch ramp to reach full pressure.
 const RAMP_SECONDS: f64 = 1.0;
 
@@ -151,13 +154,13 @@ impl LaunchpadUi {
         self.aftertouch_on_hold = on;
     }
 
-    /// Draws the surface at `phase` through the current beat and returns any interactions.
+    /// Draws the surface at `beats` elapsed and returns any interactions.
     pub fn show(
         &mut self,
         ui: &mut Ui,
         layout: &Layout,
         surface: &Surface,
-        phase: f32,
+        beats: f32,
     ) -> InnerResponse<Vec<Interaction>> {
         // Claim the whole space, then centre a square in it so extra width or height is even
         let available = ui.available_size();
@@ -175,7 +178,7 @@ impl LaunchpadUi {
             if !role.is_lit() {
                 continue;
             }
-            let color = to_color32(surface.color_at(pad, phase));
+            let color = to_color32(surface.color_at(pad, beats));
             let rect = cell_rect(board, cell, pad);
             draw_pad(&painter, rect, cell, role, color);
         }
@@ -326,9 +329,19 @@ fn corner_radius(points: f32) -> CornerRadius {
     CornerRadius::same(points.clamp(0.0, 255.0) as u8)
 }
 
-/// Converts an emulator colour into an egui colour.
+/// Converts an emulator colour into an egui colour, brightened to look emissive.
 fn to_color32(color: Rgb) -> Color32 {
-    Color32::from_rgb(color.r, color.g, color.b)
+    Color32::from_rgb(lift(color.r), lift(color.g), lift(color.b))
+}
+
+/// Raises a channel by the display gamma, leaving black and full brightness where they are.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn lift(channel: u8) -> u8 {
+    if channel == 0 {
+        return 0;
+    }
+    let level = f32::from(channel) / 255.0;
+    (level.powf(GAMMA) * 255.0).round().min(255.0) as u8
 }
 
 #[cfg(test)]
@@ -374,6 +387,13 @@ mod tests {
         assert_eq!(ramp(RAMP_SECONDS / 2.0), 64);
         assert_eq!(ramp(RAMP_SECONDS), 127);
         assert_eq!(ramp(10.0), 127);
+    }
+
+    #[test]
+    fn lifting_keeps_the_ends_and_brightens_the_middle() {
+        assert_eq!(lift(0), 0);
+        assert_eq!(lift(255), 255);
+        assert!(lift(128) > 150, "midtones should brighten noticeably");
     }
 
     #[test]
