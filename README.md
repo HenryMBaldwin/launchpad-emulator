@@ -13,7 +13,18 @@ reaches the hardware unchanged, and hardware presses are reported to the host.
 The emulator sits in the signal path, so it sees LED traffic a passive MIDI
 monitor cannot.
 
-Currently implemented: Launchpad X and Launchpad Mini MK3.
+## Supported devices
+
+- [ ] Launchpad (MK1)
+- [ ] Launchpad S
+- [ ] Launchpad Mini
+- [ ] Launchpad Control
+- [ ] Launchpad Control XL
+- [ ] Launchpad Pro
+- [ ] Launchpad MK2
+- [x] Launchpad X
+- [x] Launchpad Mini MK3
+- [ ] Launchpad Pro MK2
 
 ## Layout
 
