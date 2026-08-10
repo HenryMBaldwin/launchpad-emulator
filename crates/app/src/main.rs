@@ -15,26 +15,60 @@ const LOG_LIMIT: usize = 200;
 const LOG_HEIGHT: f32 = 96.0;
 
 /// Width the surface opens at.
-const BOARD_SIZE: f32 = 420.0;
+const BOARD_SIZE: f32 = 460.0;
 
 /// Smallest the surface is allowed to become.
 const MIN_BOARD: f32 = 280.0;
 
+/// Narrowest the window may be, set by the controls rather than the surface.
+const MIN_WIDTH: f32 = 440.0;
+
 /// Smallest the activity log is allowed to become.
 const MIN_LOG: f32 = 64.0;
 
+/// What the command line asked for.
+struct Args {
+    device: String,
+    port: Option<String>,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let device = std::env::args().nth(1).unwrap_or_else(|| "x".into());
-    match device.as_str() {
-        "x" => run::<LaunchpadX>(),
-        "mini-mk3" => run::<LaunchpadMiniMk3>(),
+    let args = parse_args(std::env::args().skip(1))?;
+    match args.device.as_str() {
+        "x" => run::<LaunchpadX>(args.port.as_deref()),
+        "mini-mk3" => run::<LaunchpadMiniMk3>(args.port.as_deref()),
         other => Err(format!("unknown device {other:?}, expected \"x\" or \"mini-mk3\"").into()),
     }
 }
 
+/// Reads `[device] [--port NAME]`.
+fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, Box<dyn Error>> {
+    let mut parsed = Args {
+        device: "x".into(),
+        port: None,
+    };
+    let mut args = args.peekable();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--port" => {
+                parsed.port = Some(args.next().ok_or("--port needs a name")?);
+            }
+            "-h" | "--help" => {
+                println!("usage: launchpad-emulator-app [x|mini-mk3] [--port NAME]");
+                std::process::exit(0);
+            }
+            other => parsed.device = other.into(),
+        }
+    }
+    Ok(parsed)
+}
+
 /// Opens the window for one device.
-fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
-    let mut emulator = Emulator::<S>::with_default_name()?;
+fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>> {
+    let mut emulator = match port {
+        Some(name) => Emulator::<S>::new(name)?,
+        None => Emulator::<S>::with_default_name()?,
+    };
     let hardware = emulator.attach_hardware().is_ok();
 
     let options = eframe::NativeOptions {
@@ -42,7 +76,7 @@ fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
         persist_window: false,
         viewport: ViewportBuilder::default()
             .with_inner_size([BOARD_SIZE, BOARD_SIZE + LOG_HEIGHT + 34.0])
-            .with_min_inner_size([MIN_BOARD, MIN_BOARD + MIN_LOG]),
+            .with_min_inner_size([MIN_WIDTH, MIN_BOARD + MIN_LOG]),
         ..Default::default()
     };
     eframe::run_native(
@@ -139,7 +173,7 @@ impl<S: DeviceSpec> App<S> {
 
     /// Draws the controls and the activity log.
     fn log_panel(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let mut velocity = self.widget.velocity();
             if ui
                 .add(Slider::new(&mut velocity, 1..=127).text("velocity"))

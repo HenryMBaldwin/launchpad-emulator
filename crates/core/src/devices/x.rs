@@ -19,6 +19,7 @@ impl DeviceSpec for LaunchpadX {
     const WIDTH: u8 = family::SIZE;
     const HEIGHT: u8 = family::SIZE;
     const HARDWARE_KEYWORD: &'static str = "Launchpad X LPX MI";
+    const PORT_NAME: &'static str = "Launchpad X LPX MIDI";
     const VELOCITY_SENSITIVE: bool = true;
 
     fn pad_from_midi(number: u8) -> Option<Pad> {
@@ -53,6 +54,11 @@ impl DeviceSpec for LaunchpadX {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_port_name_is_discoverable_as_this_model() {
+        assert!(LaunchpadX::PORT_NAME.contains(LaunchpadX::HARDWARE_KEYWORD));
+    }
 
     #[test]
     fn the_logo_lights_but_is_not_a_button() {
