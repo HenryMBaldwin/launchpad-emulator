@@ -5,7 +5,7 @@ mod icon;
 use std::error::Error;
 use std::time::Duration;
 
-use eframe::egui::{CentralPanel, Frame, Panel, ScrollArea, Slider, Ui, ViewportBuilder};
+use eframe::egui::{CentralPanel, Frame, Key, Panel, ScrollArea, Slider, Ui, ViewportBuilder};
 use launchpad_emulator::devices::{LaunchpadMiniMk3, LaunchpadX};
 use launchpad_emulator::{DeviceSpec, Emulator, HostMessage, Interaction, Pad};
 use launchpad_emulator_ui::{Labels, LaunchpadUi, Layout};
@@ -13,8 +13,8 @@ use launchpad_emulator_ui::{Labels, LaunchpadUi, Layout};
 /// Messages kept in the activity log.
 const LOG_LIMIT: usize = 200;
 
-/// Height the activity log opens at.
-const LOG_HEIGHT: f32 = 96.0;
+/// Height the console opens at.
+const LOG_HEIGHT: f32 = 170.0;
 
 /// Width the surface opens at.
 const BOARD_SIZE: f32 = 460.0;
@@ -23,10 +23,10 @@ const BOARD_SIZE: f32 = 460.0;
 const MIN_BOARD: f32 = 280.0;
 
 /// Narrowest the window may be, set by the controls rather than the surface.
-const MIN_WIDTH: f32 = 440.0;
+const MIN_WIDTH: f32 = 520.0;
 
 /// Smallest the activity log is allowed to become.
-const MIN_LOG: f32 = 64.0;
+const MIN_LOG: f32 = 110.0;
 
 /// What the command line asked for.
 struct Args {
@@ -108,6 +108,7 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
                 hardware,
                 log: Vec::new(),
                 decoded: 0,
+                console: true,
             }))
         }),
     )?;
@@ -122,6 +123,8 @@ struct App<S: DeviceSpec> {
     hardware: bool,
     log: Vec<String>,
     decoded: usize,
+    /// Whether the console is showing.
+    console: bool,
 }
 
 impl<S: DeviceSpec> App<S> {
@@ -189,8 +192,8 @@ impl<S: DeviceSpec> App<S> {
         });
     }
 
-    /// Draws the controls and the activity log.
-    fn log_panel(&mut self, ui: &mut Ui) {
+    /// Draws the controls, which stay visible whether the console is showing or not.
+    fn controls(&mut self, ui: &mut Ui) {
         ui.horizontal_wrapped(|ui| {
             let mut velocity = self.widget.velocity();
             if ui
@@ -204,13 +207,26 @@ impl<S: DeviceSpec> App<S> {
                 self.widget.set_aftertouch_on_hold(aftertouch);
             }
             ui.separator();
+            ui.toggle_value(&mut self.console, "console")
+                .on_hover_text("Show what the host has sent (`)");
             ui.label(format!("{} decoded", self.decoded));
-        });
-        ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
-            for line in &self.log {
-                ui.monospace(line);
+            if self.console && ui.button("clear").clicked() {
+                self.log.clear();
             }
         });
+    }
+
+    /// Draws the console, filling whatever height the panel has been given.
+    fn console(&mut self, ui: &mut Ui) {
+        ui.separator();
+        ScrollArea::vertical()
+            .stick_to_bottom(true)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for line in &self.log {
+                    ui.monospace(line);
+                }
+            });
     }
 }
 
@@ -226,10 +242,22 @@ impl<S: DeviceSpec> eframe::App for App<S> {
         };
 
         Panel::top("status").show(ui, |ui| self.status_bar(ui, bpm, &surface));
-        Panel::bottom("log")
-            .resizable(true)
-            .default_size(LOG_HEIGHT)
-            .show(ui, |ui| self.log_panel(ui));
+        if ui.ctx().input(|i| i.key_pressed(Key::Backtick)) {
+            self.console = !self.console;
+        }
+        let mut panel = Panel::bottom("console").resizable(self.console);
+        if self.console {
+            panel = panel
+                .default_size(LOG_HEIGHT)
+                .size_range(MIN_LOG..=f32::INFINITY);
+        }
+        panel.show(ui, |ui| {
+            self.controls(ui);
+            if self.console {
+                ui.set_min_height(LOG_HEIGHT);
+                self.console(ui);
+            }
+        });
 
         let board = CentralPanel::default()
             .frame(Frame::NONE)
