@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use std::thread::sleep;
 use std::time::Duration;
 
-use launchpad_emulator::devices::{LaunchpadX, mk3};
+use launchpad_emulator::devices::{LaunchpadX, mk3_family, x};
 use launchpad_emulator::{DeviceSpec, Emulator, Interaction, Pad, Surface};
 use midir::MidiOutput;
 
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut host = output.connect(&port, "smoke-host")?;
 
     let sysex = |body: &[u8]| {
-        let mut bytes = mk3::sysex_header(0x0C).to_vec();
+        let mut bytes = mk3_family::sysex_header(x::DEVICE_ID).to_vec();
         bytes.extend_from_slice(body);
         bytes.push(0xF7);
         bytes
