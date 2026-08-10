@@ -2,16 +2,18 @@
 
 A Novation Launchpad emulator that presents itself as a MIDI device.
 
-The emulator presents itself as a pair of virtual MIDI ports, or as nothing at
-all when embedded. A host connects to it instead of the hardware, and everything
-it sends to light the surface is decoded into a `Surface` a front end can draw.
-Interactions travel the other way, so clicking a pad in a front end reaches the
-host as a real press would.
+A host application connects to the emulator instead of the hardware. Everything
+it sends to light the surface is decoded into a `Surface` a front end can draw,
+and interactions travel the other way, so clicking a pad reaches the host as a
+real press would. The emulator answers the same queries the hardware answers, so
+a host that identifies a device by asking it who it is finds a Launchpad.
 
 Attaching a real Launchpad mirrors both directions at once: the host's lighting
 reaches the hardware unchanged, and hardware presses are reported to the host.
 Because the emulator sits in the signal path rather than beside it, it sees LED
 traffic that a passive MIDI monitor cannot.
+
+Currently implemented: Launchpad X and Launchpad Mini MK3.
 
 ## Layout
 
@@ -23,9 +25,23 @@ Device differences live behind the `DeviceSpec` trait, so the emulator, the
 surface and any front end are written once. `Surface` is deliberately not
 generic over the device, which keeps front ends free of type parameters.
 
-Currently implemented: Launchpad X and Launchpad Mini MK3.
+## Running
 
-## Usage
+```
+cargo run --bin launchpad-emulator                      # Launchpad X
+cargo run --bin launchpad-emulator mini-mk3             # Launchpad Mini MK3
+cargo run --bin launchpad-emulator -- --port "My Pad"   # a name of your own
+```
+
+The virtual ports are named after the hardware, so a host that discovers a
+Launchpad by port name finds the emulator. With real hardware attached as well
+the match is ambiguous and the host may pick either, so select the port
+explicitly in that case.
+
+Clicking a pad reports a press, holding one ramps aftertouch pressure, and
+resting the pointer on one shows its label.
+
+## Using the library
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Emulator, Interaction, Pad};
@@ -43,35 +59,9 @@ emulator.send(Interaction::Press {
 })?;
 ```
 
-## Running
-
-```
-cargo run --bin launchpad-emulator                      # Launchpad X
-cargo run --bin launchpad-emulator mini-mk3             # Launchpad Mini MK3
-cargo run --bin launchpad-emulator -- --port "My Pad"   # a name of your own
-```
-
-The virtual ports are named after the hardware, so a host that discovers a Launchpad by port name
-finds the emulator. With real hardware attached as well the match is ambiguous and the host may pick
-either, so select the port explicitly in that case.
-
-The window draws whatever a host sends. Clicking a pad reports a press, holding one ramps aftertouch
-pressure, and resting the pointer on one shows its label.
-
-Three examples help when working on it. `drive` acts as a host, lighting a pattern, scrolling text
-and sending a beat clock; `loopback` checks that interactions reach a host and that queries are
-answered; `smoke` drives the surface and prints it as coloured blocks:
-
-```
-cargo run --example drive
-cargo run --example loopback
-cargo run --example smoke
-```
-
-## Embedding
-
-`Emulator::in_process` publishes no MIDI ports at all. Drive it with `feed` and collect what the
-user does with `reported`, for an application that both draws the surface and plays it:
+`Emulator::in_process` publishes no MIDI ports at all, for an application that
+both draws the surface and plays it. Drive it with `feed` and collect what the
+user does with `reported`:
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Emulator};
@@ -83,21 +73,17 @@ for interaction in emulator.reported() {
 }
 ```
 
-## Text scrolling
-
-A scroll started by the host is drawn across the grid and the right-hand column, leaving the top row
-and the logo alone, and the lighting underneath returns once the scroll stops or finishes. Call
-`Emulator::advance` once a frame to move it on.
-
-The font covers the letters, digits and punctuation in `font::GLYPHS`. Lowercase is drawn with the
-uppercase glyph and anything else is skipped, so it is narrower than what the hardware can display.
+Call `Emulator::advance` once a frame so a text scroll started by the host moves
+on, and pass `Emulator::beats` to `Surface::color_at` so flashing and pulsing
+follow the host's tempo.
 
 ## Labels
 
-Each pad can carry a label, shown while the pointer rests on it. `Labels::defaults` names the
-buttons with the words printed on the device and numbers the grid from its own top left corner, so
-the first pad reads `Grid 0,0` even though it sits at `Pad::new(0, 1)` on the surface. `Labels::none`
-starts empty, and layers go on top of either:
+Each pad can carry a label, shown while the pointer rests on it.
+`Labels::defaults` names the buttons with the words printed on the device and
+numbers the grid from its own top left corner, so the first pad reads `Grid 0,0`
+even though it sits at `Pad::new(0, 1)` on the surface. `Labels::none` starts
+empty, and layers go on top of either:
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Pad};
@@ -112,50 +98,32 @@ let labels = Labels::defaults::<LaunchpadX>()
 let widget = LaunchpadUi::new().with_labels(labels);
 ```
 
-The label is drawn as an egui tooltip at the pointer, so how quickly it appears is the host's to
-decide. The standalone app makes it immediate:
-
-```rust
-cc.egui_ctx.all_styles_mut(|style| {
-    style.animation_time = 0.0;
-    style.interaction.tooltip_delay = 0.0;
-    style.interaction.tooltip_grace_time = 0.0;
-});
-```
-
-## Identifying as a Launchpad
-
-The emulator answers the queries the hardware answers, so a host that identifies a device by asking
-it who it is gets the same reply a real Launchpad gives: a universal device inquiry, the layout, the
-brightness, the sleep state, the velocity curve and the aftertouch mode, plus the echo the hardware
-sends when the mode changes.
-
-## Window icon
-
-The icon is drawn in code from the pad colours, so the app ships no image files. To use a different
-one, replace `icon::build` in `crates/launchpad-emulator-app`.
+Labels are drawn as egui tooltips, so how quickly they appear is the host's to
+decide through `animation_time` and `interaction.tooltip_delay`.
 
 ## Platform support
 
-Virtual MIDI ports are unavailable on Windows, so this crate does not build
-there. macOS (CoreMIDI) and Linux (ALSA, JACK) are supported.
+macOS and Linux. Windows has no virtual MIDI ports, so the crate does not build
+there.
 
-Building on Linux needs the ALSA development headers:
+Linux needs the ALSA development headers:
 
 ```
 sudo apt-get install libasound2-dev
 ```
 
-## Colour palette
+## Development
 
-The 128 palette colours were sampled from the chart in the Launchpad X
-Programmer's Reference Manual and rescaled so that entry 0 is the unlit black
-the hardware shows. The chart renders every channel with a floor of `0x61`;
-rescaling that floor to zero maps entry 0 to exact black and the primaries to
-pure red, green and blue.
+Three examples drive the emulator without a Launchpad to hand. `drive` acts as a
+host, lighting a pattern, scrolling text and sending a beat clock; `loopback`
+checks that interactions reach a host and that queries are answered; `smoke`
+drives the surface and prints it as coloured blocks.
 
-`crates/launchpad-emulator-ui` then raises what it draws by the display gamma, so a flat fill reads
-about as brightly as a lit LED. The palette itself is left as the device defines it.
+```
+cargo run --example drive
+cargo run --example loopback
+cargo run --example smoke
+```
 
 ## License
 
