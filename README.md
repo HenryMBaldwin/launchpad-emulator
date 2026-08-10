@@ -80,6 +80,25 @@ cargo run --example drive
 cargo run --example loopback
 ```
 
+## Text scrolling
+
+A scroll started by the host is drawn across the grid and the right-hand column, leaving the top row
+and the logo alone, and the lighting underneath returns once the scroll stops or finishes. Call
+`Emulator::advance` once a frame to move it on.
+
+The font covers the letters, digits and punctuation in `font::GLYPHS`. Lowercase is drawn with the
+uppercase glyph and anything else is skipped, so it is narrower than what the hardware can display.
+
+## Labels
+
+A front end can name what each pad is bound to, shown while the pointer rests on it:
+
+```rust
+# use launchpad_emulator::Pad;
+# let mut widget = launchpad_emulator_ui::LaunchpadUi::new();
+widget.set_label(Pad::new(0, 8), "kick");
+```
+
 ## Identifying as a Launchpad
 
 The emulator answers the queries the hardware answers, so a host that identifies a device by asking

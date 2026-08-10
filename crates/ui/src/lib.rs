@@ -16,6 +16,8 @@
 //! # }
 //! ```
 
+use std::collections::BTreeMap;
+
 use egui::{Color32, CornerRadius, InnerResponse, Pos2, Rect, Response, Sense, Ui, Vec2};
 use launchpad_emulator::{DeviceSpec, Interaction, Pad, PadRole, Rgb, Surface};
 
@@ -113,6 +115,7 @@ pub struct LaunchpadUi {
     velocity: u8,
     aftertouch_on_hold: bool,
     held: Option<Held>,
+    labels: BTreeMap<Pad, String>,
 }
 
 impl Default for LaunchpadUi {
@@ -124,12 +127,36 @@ impl Default for LaunchpadUi {
 impl LaunchpadUi {
     /// Creates a widget reporting full velocity presses.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             velocity: 127,
             aftertouch_on_hold: true,
             held: None,
+            labels: BTreeMap::new(),
         }
+    }
+
+    /// Gives a pad a label, shown while the pointer rests on it.
+    ///
+    /// Useful for naming what an application has bound each pad to.
+    pub fn set_label(&mut self, pad: Pad, label: impl Into<String>) {
+        self.labels.insert(pad, label.into());
+    }
+
+    /// The label on a pad, if it has one.
+    #[must_use]
+    pub fn label(&self, pad: Pad) -> Option<&str> {
+        self.labels.get(&pad).map(String::as_str)
+    }
+
+    /// Takes the label off a pad, returning it.
+    pub fn remove_label(&mut self, pad: Pad) -> Option<String> {
+        self.labels.remove(&pad)
+    }
+
+    /// Removes every label.
+    pub fn clear_labels(&mut self) {
+        self.labels.clear();
     }
 
     /// Velocity reported for a click, in `1..=127`.
@@ -171,6 +198,9 @@ impl LaunchpadUi {
 
         // Resolve the pointer first so a press outlines its pad on the same frame
         let interactions = self.interactions(ui, layout, &response, board, cell);
+        let hovered = response
+            .hover_pos()
+            .and_then(|pos| pad_at(layout, board, cell, pos));
 
         painter.rect_filled(board, CornerRadius::same(12), BODY);
         for pad in layout.pads() {
@@ -191,6 +221,11 @@ impl LaunchpadUi {
             );
         }
 
+        // The label follows the pointer, so one response can describe every pad
+        let response = match hovered.and_then(|pad| self.labels.get(&pad)) {
+            Some(label) => response.on_hover_text(label),
+            None => response,
+        };
         InnerResponse::new(interactions, response)
     }
 
@@ -387,6 +422,29 @@ mod tests {
         assert_eq!(ramp(RAMP_SECONDS / 2.0), 64);
         assert_eq!(ramp(RAMP_SECONDS), 127);
         assert_eq!(ramp(10.0), 127);
+    }
+
+    #[test]
+    fn labels_can_be_set_read_and_removed() {
+        let mut widget = LaunchpadUi::new();
+        let pad = Pad::new(2, 3);
+        assert_eq!(widget.label(pad), None);
+        widget.set_label(pad, "kick");
+        assert_eq!(widget.label(pad), Some("kick"));
+        widget.set_label(pad, "snare");
+        assert_eq!(widget.label(pad), Some("snare"), "setting again replaces");
+        assert_eq!(widget.remove_label(pad), Some("snare".into()));
+        assert_eq!(widget.label(pad), None);
+    }
+
+    #[test]
+    fn clearing_removes_every_label() {
+        let mut widget = LaunchpadUi::new();
+        widget.set_label(Pad::new(0, 0), "a");
+        widget.set_label(Pad::new(1, 0), "b");
+        widget.clear_labels();
+        assert_eq!(widget.label(Pad::new(0, 0)), None);
+        assert_eq!(widget.label(Pad::new(1, 0)), None);
     }
 
     #[test]
