@@ -1,0 +1,35 @@
+# Build artifacts
+/target
+
+# Nix / direnv
+/.direnv
+/.envrc
+/flake.nix
+/flake.lock
+/result
+/result-*
+
+# VCS and CI
+/.git
+/.github
+/.gitignore
+
+# Local env and editor state
+**/.env
+**/.env.local
+**/.DS_Store
+/.claude
+
+# Docs and licensing
+/README.md
+/LICENSE-*
+
+# Tooling config not used by the build
+/.commitlintrc.yml
+/_typos.toml
+/prek.toml
+/taplo.toml
+/Dockerfile
+/.dockerignore
+</content>
+</invoke>
