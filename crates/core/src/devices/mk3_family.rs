@@ -4,10 +4,10 @@
 //! and differ only in the device ID byte and in whether the grid is velocity sensitive.
 
 use super::palette;
-use crate::Rgb;
 use crate::message::{HostMessage, Interaction};
 use crate::pad::Pad;
 use crate::surface::{Lighting, TextScroll};
+use crate::{PadRole, Rgb};
 
 /// Manufacturer prefix every Novation `SysEx` message carries.
 const NOVATION: [u8; 5] = [0xF0, 0x00, 0x20, 0x29, 0x02];
@@ -70,6 +70,20 @@ pub const fn is_grid(pad: Pad) -> bool {
 #[must_use]
 pub const fn is_logo(pad: Pad) -> bool {
     pad.x == SIZE - 1 && pad.y == 0
+}
+
+/// The kind of control at a position on this family's 9x9 surface.
+#[must_use]
+pub const fn role(pad: Pad) -> PadRole {
+    if pad.x >= SIZE || pad.y >= SIZE {
+        PadRole::Absent
+    } else if is_logo(pad) {
+        PadRole::Logo
+    } else if is_grid(pad) {
+        PadRole::Grid
+    } else {
+        PadRole::Control
+    }
 }
 
 /// Encodes an interaction as the hardware would report it in Programmer mode.
@@ -283,6 +297,27 @@ mod tests {
             assert!(pad_from_midi(number).is_none(), "accepted {number}");
         }
         assert!(pad_to_midi(Pad::new(9, 0)).is_none());
+    }
+
+    #[test]
+    fn every_position_has_a_role() {
+        assert_eq!(role(Pad::new(0, 0)), PadRole::Control);
+        assert_eq!(role(Pad::new(8, 4)), PadRole::Control);
+        assert_eq!(role(Pad::new(8, 0)), PadRole::Logo);
+        assert_eq!(role(Pad::new(3, 4)), PadRole::Grid);
+        assert_eq!(role(Pad::new(9, 0)), PadRole::Absent);
+        assert_eq!(
+            Pad::all(SIZE, SIZE)
+                .filter(|p| role(*p) == PadRole::Grid)
+                .count(),
+            64
+        );
+        assert_eq!(
+            Pad::all(SIZE, SIZE)
+                .filter(|p| role(*p) == PadRole::Control)
+                .count(),
+            16
+        );
     }
 
     #[test]
