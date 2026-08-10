@@ -16,6 +16,11 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 egui = "0.36"
 launchpad-emulator = { version = "0.1.0", path = "../launchpad-emulator" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "registry",
+  "std",
+] }
 
 [lints]
 workspace = true
