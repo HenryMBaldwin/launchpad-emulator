@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use eframe::egui::{CentralPanel, Frame, Panel, ScrollArea, Slider, Ui, ViewportBuilder};
 use launchpad_emulator::devices::{LaunchpadMiniMk3, LaunchpadX};
-use launchpad_emulator::{DeviceSpec, Emulator, HostMessage, Interaction};
+use launchpad_emulator::{DeviceSpec, Emulator, HostMessage, Interaction, Pad};
 use launchpad_emulator_ui::{LaunchpadUi, Layout};
 
 /// Messages kept in the activity log.
@@ -83,9 +83,16 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
         S::NAME,
         options,
         Box::new(move |_cc| {
+            let mut widget = LaunchpadUi::new();
+            for pad in Pad::all(S::WIDTH, S::HEIGHT) {
+                if let Some(number) = S::pad_to_midi(pad) {
+                    let role = S::role(pad);
+                    widget.set_label(pad, format!("({}, {})  {role:?}  {number}", pad.x, pad.y));
+                }
+            }
             Ok(Box::new(App {
                 layout: Layout::for_device::<S>(),
-                widget: LaunchpadUi::new(),
+                widget,
                 emulator,
                 hardware,
                 log: Vec::new(),
@@ -199,6 +206,7 @@ impl<S: DeviceSpec> App<S> {
 impl<S: DeviceSpec> eframe::App for App<S> {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.pump();
+        let _ = self.emulator.advance();
 
         let beats = self.emulator.beats().unwrap_or(0.0);
         let bpm = self.emulator.bpm().unwrap_or(0.0);
