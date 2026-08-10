@@ -15,6 +15,10 @@ monitor cannot.
 
 ## Supported devices
 
+Note: I only have a Launchpad X so it's unlikely I will dedicate much time to
+implementing the other models, however I encourage you to implement your model
+based on the existing code and I'll happily merge.
+
 - [ ] Launchpad (MK1)
 - [ ] Launchpad S
 - [ ] Launchpad Mini
@@ -43,6 +47,8 @@ Clicking a pad reports a press, holding one ramps aftertouch pressure, and
 resting the pointer on one shows its label.
 
 ## Using the library
+
+### Emulator
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Emulator, Interaction, Pad};
@@ -77,13 +83,13 @@ Call `Emulator::advance` once a frame so a text scroll started by the host moves
 on, and pass `Emulator::beats` to `Surface::color_at` so flashing and pulsing
 follow the host's tempo.
 
-## Labels
+### Labels
 
 Each pad can carry a label, shown while the pointer rests on it.
 `Labels::defaults` names the buttons with the words printed on the device and
-numbers the grid from its own top left corner, so the first pad reads `Grid 0,0`,
-which is `Pad::new(0, 1)` on the surface. `Labels::none` starts empty, and layers
-go on top of either:
+numbers the grid from its own top left corner, so the first pad reads
+`Grid 0,0`, which is `Pad::new(0, 1)` on the surface. `Labels::none` starts
+empty, and layers go on top of either:
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Pad};
