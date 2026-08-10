@@ -395,8 +395,9 @@ fn ingest<S: DeviceSpec>(
 ) {
     if let Ok(mut hardware) = hardware.lock()
         && let Some(output) = hardware.as_mut()
+        && let Err(error) = output.send(bytes)
     {
-        let _ = output.send(bytes);
+        tracing::warn!(%error, "could not mirror to the hardware");
     }
     for message in S::decode(bytes) {
         if let Ok(mut surface) = surface.lock() {
@@ -415,14 +416,16 @@ fn ingest<S: DeviceSpec>(
         if let Some(reply) = reply {
             match to_host.lock().as_deref_mut() {
                 Ok(Some(port)) => {
-                    let _ = port.send(&reply);
+                    if let Err(error) = port.send(&reply) {
+                        tracing::warn!(%error, "could not answer the host");
+                    }
                 }
                 Ok(None) => {
                     if let Ok(mut queued) = replies.lock() {
                         queued.push(reply);
                     }
                 }
-                Err(_) => {}
+                Err(_) => tracing::warn!("the host port lock was poisoned"),
             }
         }
         // A closed receiver only means nothing is reading the log

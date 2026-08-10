@@ -121,6 +121,17 @@ console.push("connected");
 `record` takes a `HostMessage` and skips the lighting and clock messages that arrive continuously.
 `push` takes any line.
 
+`Console::layer` is a `tracing` layer, so installing it puts every event in the program on screen,
+including events from crates the front end brings itself:
+
+```rust
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
+
+let console = launchpad_emulator_ui::Console::new();
+tracing_subscriber::registry().with(console.layer()).init();
+```
+
 ## Platform support
 
 macOS and Linux. Windows has no virtual MIDI ports, so the crate does not build
