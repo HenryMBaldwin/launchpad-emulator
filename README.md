@@ -10,8 +10,8 @@ a host that identifies a device by asking it who it is finds a Launchpad.
 
 Attaching a real Launchpad mirrors both directions at once: the host's lighting
 reaches the hardware unchanged, and hardware presses are reported to the host.
-Because the emulator sits in the signal path rather than beside it, it sees LED
-traffic that a passive MIDI monitor cannot.
+The emulator sits in the signal path, so it sees LED traffic a passive MIDI
+monitor cannot.
 
 Currently implemented: Launchpad X and Launchpad Mini MK3.
 
@@ -21,9 +21,8 @@ Currently implemented: Launchpad X and Launchpad Mini MK3.
 - `crates/launchpad-emulator-ui` — an egui widget, embeddable in any egui app
 - `crates/launchpad-emulator-app` — a standalone window wrapping the widget
 
-Device differences live behind the `DeviceSpec` trait, so the emulator, the
-surface and any front end are written once. `Surface` is deliberately not
-generic over the device, which keeps front ends free of type parameters.
+Device differences live behind the `DeviceSpec` trait. `Surface` is not generic
+over the device.
 
 ## Running
 
@@ -59,9 +58,8 @@ emulator.send(Interaction::Press {
 })?;
 ```
 
-`Emulator::in_process` publishes no MIDI ports at all, for an application that
-both draws the surface and plays it. Drive it with `feed` and collect what the
-user does with `reported`:
+`Emulator::in_process` publishes no MIDI ports. Drive it with `feed` and collect
+what the user does with `reported`:
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Emulator};
@@ -81,9 +79,9 @@ follow the host's tempo.
 
 Each pad can carry a label, shown while the pointer rests on it.
 `Labels::defaults` names the buttons with the words printed on the device and
-numbers the grid from its own top left corner, so the first pad reads `Grid 0,0`
-even though it sits at `Pad::new(0, 1)` on the surface. `Labels::none` starts
-empty, and layers go on top of either:
+numbers the grid from its own top left corner, so the first pad reads `Grid 0,0`,
+which is `Pad::new(0, 1)` on the surface. `Labels::none` starts empty, and layers
+go on top of either:
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Pad};
@@ -98,8 +96,7 @@ let labels = Labels::defaults::<LaunchpadX>()
 let widget = LaunchpadUi::new().with_labels(labels);
 ```
 
-Labels are drawn as egui tooltips, so how quickly they appear is the host's to
-decide through `animation_time` and `interaction.tooltip_delay`.
+Labels are drawn as egui tooltips, and are tweaked the same way.
 
 ## Platform support
 
