@@ -1,5 +1,7 @@
 //! A standalone window presenting a Launchpad emulator as a virtual MIDI device.
 
+mod aspect;
+
 use std::error::Error;
 use std::time::Duration;
 
@@ -22,6 +24,9 @@ const BOARD_SIZE: f32 = 460.0;
 
 /// Smallest the surface is allowed to become.
 const MIN_BOARD: f32 = 280.0;
+
+/// Smallest the activity log is allowed to become.
+const MIN_LOG: f32 = 64.0;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let device = std::env::args().nth(1).unwrap_or_else(|| "x".into());
@@ -55,6 +60,7 @@ fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
                 hardware,
                 aspect,
                 matched: None,
+                native_lock: false,
                 log: Vec::new(),
                 decoded: 0,
             }))
@@ -72,6 +78,8 @@ struct App<S: DeviceSpec> {
     aspect: f32,
     /// Window size the proportions were last matched to.
     matched: Option<Vec2>,
+    /// Whether the window server is holding the ratio for us.
+    native_lock: bool,
     log: Vec<String>,
     decoded: usize,
 }
@@ -120,7 +128,17 @@ impl<S: DeviceSpec> App<S> {
     /// did not drag: widen the window and the height follows, shorten it and the width follows.
     /// `chrome` is the height the bars take. Maximised and fullscreen windows are left alone and
     /// the surface centres itself in whatever space there is.
-    fn hold_aspect(&mut self, ctx: &Context, chrome: f32) {
+    fn hold_aspect(&mut self, ctx: &Context, frame: &eframe::Frame, chrome: f32) {
+        // Set once and never revised: re-applying it fights the user's own resizes
+        if !self.native_lock {
+            let width = self.matched.map_or(BOARD_SIZE, |size| size.x);
+            self.native_lock = aspect::enforce(frame, width, width / self.aspect + chrome);
+        }
+        if self.native_lock {
+            self.matched = ctx.input(|i| i.viewport().inner_rect.map(|r| r.size()));
+            return;
+        }
+
         let (size, free) = ctx.input(|i| {
             let v = i.viewport();
             (
@@ -200,7 +218,7 @@ impl<S: DeviceSpec> App<S> {
 }
 
 impl<S: DeviceSpec> eframe::App for App<S> {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         self.pump();
 
         let phase = self.emulator.phase().unwrap_or(0.0);
@@ -209,14 +227,22 @@ impl<S: DeviceSpec> eframe::App for App<S> {
             return;
         };
 
+        let window = ui
+            .ctx()
+            .input(|i| i.viewport().inner_rect.map(|r| r.height()));
         let top = Panel::top("status").show(ui, |ui| self.status_bar(ui, bpm, &surface));
+
+        // The surface takes the full width as a square, and the log absorbs whatever is left, so
+        // no strip of background is ever exposed beside or below it
+        let board = ui.available_width();
+        let log = window.map_or(LOG_HEIGHT, |h| {
+            (h - top.response.rect.height() - board).max(MIN_LOG)
+        });
         let bottom = Panel::bottom("log")
-            .resizable(true)
-            .default_size(LOG_HEIGHT)
+            .exact_size(log)
             .show(ui, |ui| self.log_panel(ui));
-        // Panel heights follow their content, so using them avoids feeding the resize back
         let chrome = top.response.rect.height() + bottom.response.rect.height();
-        self.hold_aspect(ui.ctx(), chrome);
+        self.hold_aspect(ui.ctx(), frame, chrome);
 
         let board = CentralPanel::default()
             .frame(Frame::NONE)
