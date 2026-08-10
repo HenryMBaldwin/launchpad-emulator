@@ -16,10 +16,14 @@
 //! # }
 //! ```
 
+mod console;
+
 use std::collections::BTreeMap;
 
 use egui::{Color32, CornerRadius, InnerResponse, Pos2, Rect, Response, Sense, Tooltip, Ui, Vec2};
 use launchpad_emulator::{DeviceSpec, Interaction, Pad, PadRole, Rgb, Surface};
+
+pub use console::{Console, DEFAULT_HEIGHT, DEFAULT_LIMIT};
 
 /// Colour of the chassis behind the pads.
 const BODY: Color32 = Color32::from_rgb(28, 28, 32);
