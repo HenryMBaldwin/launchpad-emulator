@@ -57,6 +57,11 @@ pub trait DeviceSpec {
     const HEIGHT: u8;
     /// Substring identifying the MIDI ports of this model's hardware.
     const HARDWARE_KEYWORD: &'static str;
+    /// Name to create virtual ports under.
+    ///
+    /// Contains [`Self::HARDWARE_KEYWORD`], so a host that discovers hardware by name finds the
+    /// emulator too. With real hardware also attached the match is ambiguous.
+    const PORT_NAME: &'static str;
     /// Whether the pads report how hard they were struck.
     const VELOCITY_SENSITIVE: bool;
 

@@ -45,8 +45,28 @@ emulator.send(Interaction::Press {
 ## Running
 
 ```
-cargo run -p launchpad-emulator-app            # Launchpad X
-cargo run -p launchpad-emulator-app mini-mk3   # Launchpad Mini MK3
+cargo run -p launchpad-emulator-app                      # Launchpad X
+cargo run -p launchpad-emulator-app mini-mk3             # Launchpad Mini MK3
+cargo run -p launchpad-emulator-app --port "My Pad"      # a name of your own
+```
+
+The virtual ports are named after the hardware, so a host that discovers a Launchpad by port name
+finds the emulator. With real hardware attached as well the match is ambiguous and the host may pick
+either, so select the port explicitly in that case.
+
+## Embedding
+
+`Emulator::in_process` publishes no MIDI ports at all. Drive it with `feed` and collect what the
+user does with `reported`, for an application that both draws the surface and plays it:
+
+```rust
+use launchpad_emulator::{devices::LaunchpadX, Emulator};
+
+let mut emulator = Emulator::<LaunchpadX>::in_process();
+emulator.feed(&[0x90, 11, 5]);
+for interaction in emulator.reported() {
+    println!("{interaction:?}");
+}
 ```
 
 The window creates the virtual ports and draws whatever a host sends. Clicking a pad reports a

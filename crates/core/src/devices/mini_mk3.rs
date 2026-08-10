@@ -17,6 +17,7 @@ impl DeviceSpec for LaunchpadMiniMk3 {
     const WIDTH: u8 = family::SIZE;
     const HEIGHT: u8 = family::SIZE;
     const HARDWARE_KEYWORD: &'static str = "Launchpad Mini MK3 LPMiniMK3 MI";
+    const PORT_NAME: &'static str = "Launchpad Mini MK3 LPMiniMK3 MIDI";
     const VELOCITY_SENSITIVE: bool = false;
 
     fn pad_from_midi(number: u8) -> Option<Pad> {
@@ -51,6 +52,11 @@ impl DeviceSpec for LaunchpadMiniMk3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_port_name_is_discoverable_as_this_model() {
+        assert!(LaunchpadMiniMk3::PORT_NAME.contains(LaunchpadMiniMk3::HARDWARE_KEYWORD));
+    }
 
     #[test]
     fn the_pads_are_switches() {
