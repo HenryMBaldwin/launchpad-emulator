@@ -47,6 +47,31 @@ impl Default for Lighting {
     }
 }
 
+/// Settings a host can change and read back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Settings {
+    /// Which curve maps striking force onto velocity.
+    pub velocity_curve: u8,
+    /// Velocity reported for every pad while the curve is the fixed one.
+    pub fixed_velocity: u8,
+    /// Whether held pads report pressure per pad or once for the whole grid.
+    pub aftertouch_mode: u8,
+    /// Pressure needed before a held pad starts reporting.
+    pub aftertouch_threshold: u8,
+}
+
+impl Default for Settings {
+    /// The values the hardware powers on with.
+    fn default() -> Self {
+        Self {
+            velocity_curve: 1,
+            fixed_velocity: 127,
+            aftertouch_mode: 0,
+            aftertouch_threshold: 1,
+        }
+    }
+}
+
 /// A text scroll running across the surface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextScroll {
@@ -70,6 +95,7 @@ pub struct Surface {
     asleep: bool,
     programmer_mode: bool,
     scroll: Option<TextScroll>,
+    settings: Settings,
 }
 
 impl Surface {
@@ -90,6 +116,7 @@ impl Surface {
             asleep: false,
             programmer_mode: false,
             scroll: None,
+            settings: Settings::default(),
         }
     }
 
@@ -148,6 +175,12 @@ impl Surface {
         self.programmer_mode
     }
 
+    /// Settings the host has changed, which it can also read back.
+    #[must_use]
+    pub const fn settings(&self) -> Settings {
+        self.settings
+    }
+
     /// The running text scroll, if any.
     #[must_use]
     pub const fn scroll(&self) -> Option<&TextScroll> {
@@ -174,7 +207,18 @@ impl Surface {
             HostMessage::ProgrammerMode(on) => self.programmer_mode = *on,
             HostMessage::StartScroll(scroll) => self.scroll = Some(scroll.clone()),
             HostMessage::StopScroll => self.scroll = None,
-            HostMessage::Clock | HostMessage::Unrecognised(_) => {}
+            HostMessage::SetVelocityCurve {
+                curve,
+                fixed_velocity,
+            } => {
+                self.settings.velocity_curve = *curve;
+                self.settings.fixed_velocity = *fixed_velocity;
+            }
+            HostMessage::SetAftertouch { mode, threshold } => {
+                self.settings.aftertouch_mode = *mode;
+                self.settings.aftertouch_threshold = *threshold;
+            }
+            HostMessage::Query(_) | HostMessage::Clock | HostMessage::Unrecognised(_) => {}
         }
     }
 

@@ -4,8 +4,9 @@
 //! and differ only in the device ID byte and in whether the grid is velocity sensitive.
 
 use super::palette;
-use crate::message::{HostMessage, Interaction};
+use crate::message::{HostMessage, Interaction, Query};
 use crate::pad::Pad;
+use crate::surface::Surface;
 use crate::surface::{Lighting, TextScroll};
 use crate::{PadRole, Rgb};
 
@@ -18,7 +19,19 @@ const CMD_TEXT: u8 = 0x07;
 const CMD_BRIGHTNESS: u8 = 0x08;
 const CMD_SLEEP: u8 = 0x09;
 const CMD_MODE: u8 = 0x0E;
+const CMD_LAYOUT: u8 = 0x00;
+const CMD_VELOCITY: u8 = 0x04;
+const CMD_AFTERTOUCH: u8 = 0x0B;
 const CLOCK: u8 = 0xF8;
+
+/// A universal device inquiry, which is not addressed to any one manufacturer.
+const INQUIRY: [u8; 6] = [0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7];
+
+/// Layout byte the device reports while in Programmer mode.
+const LAYOUT_PROGRAMMER: u8 = 0x7F;
+
+/// Layout byte the device reports while in its session layout.
+const LAYOUT_SESSION: u8 = 0x00;
 
 /// Surface width and height in pads.
 pub const SIZE: u8 = 9;
@@ -126,6 +139,10 @@ pub fn decode(device_id: u8, bytes: &[u8]) -> Vec<HostMessage> {
     if bytes == [CLOCK] {
         return vec![HostMessage::Clock];
     }
+    // Any device may be asked to identify itself, whatever its manufacturer
+    if bytes == INQUIRY || matches!(bytes, [0xF0, 0x7E, _, 0x06, 0x01, 0xF7]) {
+        return vec![HostMessage::Query(Query::DeviceInquiry)];
+    }
     if let Some(message) = decode_channel_voice(bytes) {
         return vec![message];
     }
@@ -179,8 +196,77 @@ fn decode_sysex(body: &[u8]) -> Option<Vec<HostMessage>> {
         (CMD_SLEEP, &[state]) => Some(vec![HostMessage::Sleep(state == 0)]),
         (CMD_MODE, &[mode]) => Some(vec![HostMessage::ProgrammerMode(mode == 1)]),
         (CMD_TEXT, _) => Some(vec![decode_text(rest)?]),
+        (CMD_VELOCITY, &[curve, fixed_velocity]) => Some(vec![HostMessage::SetVelocityCurve {
+            curve,
+            fixed_velocity,
+        }]),
+        (CMD_AFTERTOUCH, &[mode, threshold]) => {
+            Some(vec![HostMessage::SetAftertouch { mode, threshold }])
+        }
+        // A command with no data asks the device to report that setting
+        (CMD_LAYOUT, &[]) => Some(vec![HostMessage::Query(Query::Layout)]),
+        (CMD_VELOCITY, &[]) => Some(vec![HostMessage::Query(Query::VelocityCurve)]),
+        (CMD_AFTERTOUCH, &[]) => Some(vec![HostMessage::Query(Query::Aftertouch)]),
+        (CMD_BRIGHTNESS, &[]) => Some(vec![HostMessage::Query(Query::Brightness)]),
+        (CMD_SLEEP, &[]) => Some(vec![HostMessage::Query(Query::Sleep)]),
         _ => None,
     }
+}
+
+/// Builds the bytes the hardware would send in answer to `query`.
+///
+/// `family` and `firmware` identify the model in a device inquiry response.
+#[must_use]
+pub fn encode_reply(
+    device_id: u8,
+    family: u8,
+    firmware: [u8; 4],
+    query: Query,
+    surface: &Surface,
+) -> Vec<u8> {
+    let settings = surface.settings();
+    let body = match query {
+        Query::DeviceInquiry => {
+            let mut bytes = vec![
+                0xF0, 0x7E, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, family, 0x01, 0, 0,
+            ];
+            bytes.extend_from_slice(&firmware);
+            bytes.push(SYSEX_END);
+            return bytes;
+        }
+        Query::Layout => vec![
+            CMD_LAYOUT,
+            if surface.is_programmer_mode() {
+                LAYOUT_PROGRAMMER
+            } else {
+                LAYOUT_SESSION
+            },
+        ],
+        Query::VelocityCurve => vec![
+            CMD_VELOCITY,
+            settings.velocity_curve,
+            settings.fixed_velocity,
+        ],
+        Query::Aftertouch => vec![
+            CMD_AFTERTOUCH,
+            settings.aftertouch_mode,
+            settings.aftertouch_threshold,
+        ],
+        Query::Brightness => vec![CMD_BRIGHTNESS, surface.brightness()],
+        Query::Sleep => vec![CMD_SLEEP, u8::from(!surface.is_asleep())],
+    };
+    let mut bytes = sysex_header(device_id).to_vec();
+    bytes.extend_from_slice(&body);
+    bytes.push(SYSEX_END);
+    bytes
+}
+
+/// Builds the echo the hardware sends when the host changes the mode.
+#[must_use]
+pub fn encode_mode_echo(device_id: u8, programmer: bool) -> Vec<u8> {
+    let mut bytes = sysex_header(device_id).to_vec();
+    bytes.extend_from_slice(&[CMD_MODE, u8::from(programmer), SYSEX_END]);
+    bytes
 }
 
 /// Decodes a run of colour specifications from the lighting `SysEx`.
@@ -465,6 +551,86 @@ mod tests {
             decode(ID, &bytes).as_slice(),
             [HostMessage::Unrecognised(_)]
         ));
+    }
+
+    /// Queries are the same commands with no data byte
+    #[test]
+    fn a_command_with_no_data_is_a_query() {
+        for (command, query) in [
+            (CMD_LAYOUT, Query::Layout),
+            (CMD_VELOCITY, Query::VelocityCurve),
+            (CMD_AFTERTOUCH, Query::Aftertouch),
+            (CMD_BRIGHTNESS, Query::Brightness),
+            (CMD_SLEEP, Query::Sleep),
+        ] {
+            assert_eq!(
+                decode(ID, &sysex(&[command])),
+                vec![HostMessage::Query(query)],
+                "for command {command:#04X}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_universal_inquiry_is_a_query() {
+        assert_eq!(
+            decode(ID, &INQUIRY),
+            vec![HostMessage::Query(Query::DeviceInquiry)]
+        );
+    }
+
+    #[test]
+    fn velocity_and_aftertouch_settings_decode() {
+        assert_eq!(
+            decode(ID, &sysex(&[CMD_VELOCITY, 3, 100])),
+            vec![HostMessage::SetVelocityCurve {
+                curve: 3,
+                fixed_velocity: 100
+            }]
+        );
+        assert_eq!(
+            decode(ID, &sysex(&[CMD_AFTERTOUCH, 1, 5])),
+            vec![HostMessage::SetAftertouch {
+                mode: 1,
+                threshold: 5
+            }]
+        );
+    }
+
+    /// Byte for byte what a real Launchpad X answered when asked
+    #[test]
+    fn replies_match_the_hardware() {
+        let mut surface = Surface::with_size(SIZE, SIZE);
+        surface.apply(&HostMessage::ProgrammerMode(true));
+        surface.apply(&HostMessage::Brightness(0x24));
+
+        let reply = |q| encode_reply(ID, 0x03, [0, 2, 8, 9], q, &surface);
+        assert_eq!(
+            reply(Query::DeviceInquiry),
+            vec![
+                0xF0, 0x7E, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x03, 0x01, 0x00, 0x00, 0, 2, 8, 9,
+                0xF7
+            ]
+        );
+        assert_eq!(reply(Query::Brightness), sysex(&[0x08, 0x24]));
+        assert_eq!(reply(Query::Sleep), sysex(&[0x09, 0x01]));
+        assert_eq!(reply(Query::Layout), sysex(&[0x00, 0x7F]));
+        assert_eq!(reply(Query::VelocityCurve), sysex(&[0x04, 0x01, 0x7F]));
+        assert_eq!(reply(Query::Aftertouch), sysex(&[0x0B, 0x00, 0x01]));
+        assert_eq!(encode_mode_echo(ID, true), sysex(&[0x0E, 0x01]));
+    }
+
+    #[test]
+    fn a_reply_reflects_changed_settings() {
+        let mut surface = Surface::with_size(SIZE, SIZE);
+        surface.apply(&HostMessage::SetVelocityCurve {
+            curve: 3,
+            fixed_velocity: 90,
+        });
+        surface.apply(&HostMessage::Sleep(true));
+        let reply = |q| encode_reply(ID, 0x03, [0, 2, 8, 9], q, &surface);
+        assert_eq!(reply(Query::VelocityCurve), sysex(&[0x04, 0x03, 90]));
+        assert_eq!(reply(Query::Sleep), sysex(&[0x09, 0x00]));
     }
 
     #[test]

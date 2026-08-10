@@ -11,8 +11,11 @@ use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use crate::message::{HostMessage, Interaction};
 use crate::{Clock, DeviceSpec, Error, Surface};
 
-/// Hardware connection shared with the callback that mirrors host traffic onto it.
-type Hardware = Arc<Mutex<Option<MidiOutputConnection>>>;
+/// A MIDI output shared with the callback that writes to it.
+type SharedOutput = Arc<Mutex<Option<MidiOutputConnection>>>;
+
+/// Replies queued for a host that has no MIDI port to receive them on.
+type Replies = Arc<Mutex<Vec<Vec<u8>>>>;
 
 /// A Launchpad an application can drive, over MIDI or in process.
 ///
@@ -23,10 +26,12 @@ pub struct Emulator<S: DeviceSpec> {
     /// Receives what the host sends; named from the host's point of view.
     _from_host: Option<MidiInputConnection<()>>,
     /// Sends what the emulator reports; named from the host's point of view.
-    to_host: Option<MidiOutputConnection>,
+    to_host: SharedOutput,
     /// Interactions waiting to be drained when there is no host port to write to.
     reported: Vec<Interaction>,
-    hardware_out: Hardware,
+    /// Replies waiting to be drained when there is no host port to write to.
+    replies: Replies,
+    hardware_out: SharedOutput,
     hardware_in: Option<MidiInputConnection<()>>,
     host_messages: Receiver<HostMessage>,
     hardware_interactions: Receiver<Interaction>,
@@ -60,14 +65,18 @@ impl<S: DeviceSpec> Emulator<S> {
     pub fn new(port_name: &str) -> Result<Self, Error> {
         let surface = Arc::new(Mutex::new(Surface::new::<S>()));
         let clock = Arc::new(Mutex::new(Clock::new(Instant::now())));
-        let hardware_out: Hardware = Arc::new(Mutex::new(None));
+        let hardware_out: SharedOutput = Arc::new(Mutex::new(None));
+        let to_host: SharedOutput = Arc::new(Mutex::new(None));
         let (message_sink, host_messages) = channel();
         let (hardware_sink, hardware_interactions) = channel();
+        let replies: Replies = Arc::new(Mutex::new(Vec::new()));
 
         let sink = message_sink.clone();
         let shared_surface = Arc::clone(&surface);
         let shared_clock = Arc::clone(&clock);
         let shared_hardware = Arc::clone(&hardware_out);
+        let shared_to_host = Arc::clone(&to_host);
+        let shared_replies = Arc::clone(&replies);
         let from_host = MidiInput::new(port_name)?
             .create_virtual(
                 port_name,
@@ -77,6 +86,8 @@ impl<S: DeviceSpec> Emulator<S> {
                         &shared_surface,
                         &shared_clock,
                         &shared_hardware,
+                        &shared_to_host,
+                        &shared_replies,
                         &sink,
                     );
                 },
@@ -86,15 +97,16 @@ impl<S: DeviceSpec> Emulator<S> {
                 name: port_name.into(),
             })?;
 
-        let to_host = MidiOutput::new(port_name)?
+        let port = MidiOutput::new(port_name)?
             .create_virtual(port_name)
             .map_err(|_| Error::VirtualPort {
                 name: port_name.into(),
             })?;
+        *to_host.lock().map_err(|_| Error::Poisoned)? = Some(port);
 
         Ok(Self {
             _from_host: Some(from_host),
-            to_host: Some(to_host),
+            to_host,
             reported: Vec::new(),
             hardware_out,
             hardware_in: None,
@@ -104,6 +116,7 @@ impl<S: DeviceSpec> Emulator<S> {
             surface,
             clock,
             message_sink,
+            replies,
             port_name: Some(port_name.to_owned()),
             device: PhantomData,
         })
@@ -129,8 +142,9 @@ impl<S: DeviceSpec> Emulator<S> {
         let (hardware_sink, hardware_interactions) = channel();
         Self {
             _from_host: None,
-            to_host: None,
+            to_host: Arc::new(Mutex::new(None)),
             reported: Vec::new(),
+            replies: Arc::new(Mutex::new(Vec::new())),
             hardware_out: Arc::new(Mutex::new(None)),
             hardware_in: None,
             host_messages,
@@ -153,8 +167,25 @@ impl<S: DeviceSpec> Emulator<S> {
             &self.surface,
             &self.clock,
             &self.hardware_out,
+            &self.to_host,
+            &self.replies,
             &self.message_sink,
         );
+    }
+
+    /// Takes the replies the device produced since the last call.
+    ///
+    /// Only fills up when there is no host port to write to, so this is empty for an emulator made
+    /// by [`Self::new`], which sends replies straight down the port.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a thread holding the reply lock panicked.
+    pub fn replies(&mut self) -> Result<Vec<Vec<u8>>, Error> {
+        self.replies
+            .lock()
+            .map(|mut queued| std::mem::take(&mut *queued))
+            .map_err(|_| Error::Poisoned)
     }
 
     /// Takes the interactions reported since the last call.
@@ -245,8 +276,8 @@ impl<S: DeviceSpec> Emulator<S> {
 
     /// Whether this emulator publishes virtual MIDI ports for an external host.
     #[must_use]
-    pub const fn publishes_ports(&self) -> bool {
-        self.to_host.is_some()
+    pub fn publishes_ports(&self) -> bool {
+        self.to_host.lock().is_ok_and(|port| port.is_some())
     }
 
     /// Whether real hardware is attached.
@@ -269,7 +300,7 @@ impl<S: DeviceSpec> Emulator<S> {
                 pad: interaction.pad(),
             });
         }
-        match self.to_host.as_mut() {
+        match self.to_host.lock().map_err(|_| Error::Poisoned)?.as_mut() {
             Some(port) => port.send(&bytes)?,
             None => self.reported.push(interaction),
         }
@@ -288,12 +319,14 @@ impl<S: DeviceSpec> Emulator<S> {
     /// Fails if the MIDI write to the host fails.
     pub fn pump_hardware(&mut self) -> Result<Vec<Interaction>, Error> {
         let pending: Vec<Interaction> = self.hardware_interactions.try_iter().collect();
+        let mut port = self.to_host.lock().map_err(|_| Error::Poisoned)?;
         for interaction in &pending {
-            match self.to_host.as_mut() {
+            match port.as_mut() {
                 Some(port) => port.send(&S::encode(*interaction))?,
                 None => self.reported.push(*interaction),
             }
         }
+        drop(port);
         Ok(pending)
     }
 
@@ -331,7 +364,9 @@ fn ingest<S: DeviceSpec>(
     bytes: &[u8],
     surface: &Arc<Mutex<Surface>>,
     clock: &Arc<Mutex<Clock>>,
-    hardware: &Hardware,
+    hardware: &SharedOutput,
+    to_host: &SharedOutput,
+    replies: &Replies,
     sink: &Sender<HostMessage>,
 ) {
     if let Ok(mut hardware) = hardware.lock()
@@ -347,6 +382,24 @@ fn ingest<S: DeviceSpec>(
             && let Ok(mut clock) = clock.lock()
         {
             clock.tick(Instant::now());
+        }
+        // The hardware answers immediately, so replies go out before the next message
+        let reply = surface
+            .lock()
+            .ok()
+            .and_then(|surface| S::encode_reply(&message, &surface));
+        if let Some(reply) = reply {
+            match to_host.lock().as_deref_mut() {
+                Ok(Some(port)) => {
+                    let _ = port.send(&reply);
+                }
+                Ok(None) => {
+                    if let Ok(mut queued) = replies.lock() {
+                        queued.push(reply);
+                    }
+                }
+                Err(_) => {}
+            }
         }
         // A closed receiver only means nothing is reading the log
         let _ = sink.send(message);
