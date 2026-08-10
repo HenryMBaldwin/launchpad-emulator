@@ -108,6 +108,18 @@ let labels = Labels::defaults::<LaunchpadX>()
 let widget = LaunchpadUi::new().with_labels(labels);
 ```
 
+The label is drawn as an egui tooltip at the pointer, so how quickly it appears is the host's to
+decide. The standalone app makes it immediate:
+
+```rust
+# let ctx = egui::Context::default();
+ctx.all_styles_mut(|style| {
+    style.animation_time = 0.0;
+    style.interaction.tooltip_delay = 0.0;
+    style.interaction.tooltip_grace_time = 0.0;
+});
+```
+
 ## Identifying as a Launchpad
 
 The emulator answers the queries the hardware answers, so a host that identifies a device by asking
