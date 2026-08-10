@@ -92,8 +92,9 @@ uppercase glyph and anything else is skipped, so it is narrower than what the ha
 ## Labels
 
 Each pad can carry a label, shown while the pointer rests on it. `Labels::defaults` names the
-buttons with the words printed on the device and numbers the grid, `Labels::none` starts empty, and
-layers go on top of either:
+buttons with the words printed on the device and numbers the grid from its own top left corner, so
+the first pad reads `Grid 0,0` even though it sits at `Pad::new(0, 1)` on the surface. `Labels::none`
+starts empty, and layers go on top of either:
 
 ```rust
 use launchpad_emulator::{devices::LaunchpadX, Pad};
