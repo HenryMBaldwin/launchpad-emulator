@@ -30,6 +30,7 @@
 //!
 //! Virtual MIDI ports are unavailable on Windows, so this crate does not build there.
 
+mod clock;
 mod color;
 pub mod devices;
 mod emulator;
@@ -37,6 +38,7 @@ mod message;
 mod pad;
 mod surface;
 
+pub use clock::{Clock, DEFAULT_BPM, TICKS_PER_BEAT};
 pub use color::Rgb;
 pub use emulator::Emulator;
 pub use message::{HostMessage, Interaction};
