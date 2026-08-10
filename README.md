@@ -14,9 +14,9 @@ traffic that a passive MIDI monitor cannot.
 
 ## Layout
 
-- `crates/core` — the `launchpad-emulator` library, with no front end dependencies
-- `crates/ui` — an egui widget, embeddable in any egui app
-- `crates/app` — a standalone window wrapping the widget
+- `crates/launchpad-emulator` — the library, with no front end dependencies
+- `crates/launchpad-emulator-ui` — an egui widget, embeddable in any egui app
+- `crates/launchpad-emulator-app` — a standalone window wrapping the widget
 
 Device differences live behind the `DeviceSpec` trait, so the emulator, the
 surface and any front end are written once. `Surface` is deliberately not
@@ -131,7 +131,7 @@ sends when the mode changes.
 ## Window icon
 
 The icon is drawn in code from the pad colours, so the app ships no image files. To use a different
-one, replace `icon::build` in `crates/app`.
+one, replace `icon::build` in `crates/launchpad-emulator-app`.
 
 ## Platform support
 

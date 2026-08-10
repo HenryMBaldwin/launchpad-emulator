@@ -13,8 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 eframe = "0.36"
-launchpad-emulator = { version = "0.1.0", path = "../core" }
-launchpad-emulator-ui = { version = "0.1.0", path = "../ui" }
+launchpad-emulator = { version = "0.1.0", path = "../launchpad-emulator" }
+launchpad-emulator-ui = { version = "0.1.0", path = "../launchpad-emulator-ui" }
 
 [lints]
 workspace = true

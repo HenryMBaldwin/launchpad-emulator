@@ -11,7 +11,7 @@ repository.workspace = true
 
 [dependencies]
 egui = "0.36"
-launchpad-emulator = { version = "0.1.0", path = "../core" }
+launchpad-emulator = { version = "0.1.0", path = "../launchpad-emulator" }
 
 [lints]
 workspace = true
