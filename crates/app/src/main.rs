@@ -3,13 +3,22 @@
 use std::error::Error;
 use std::time::Duration;
 
-use eframe::egui::{CentralPanel, Frame, Panel, ScrollArea, Slider, Ui, ViewportBuilder};
+use eframe::egui::{
+    CentralPanel, Context, Frame, Panel, ScrollArea, Slider, Ui, Vec2, ViewportBuilder,
+    ViewportCommand,
+};
 use launchpad_emulator::devices::{LaunchpadMiniMk3, LaunchpadX};
 use launchpad_emulator::{DeviceSpec, Emulator, HostMessage, Interaction};
 use launchpad_emulator_ui::{LaunchpadUi, Layout};
 
 /// Messages kept in the activity log.
 const LOG_LIMIT: usize = 200;
+
+/// Height the activity log opens at.
+const LOG_HEIGHT: f32 = 120.0;
+
+/// Width the surface opens at.
+const BOARD_SIZE: f32 = 460.0;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let device = std::env::args().nth(1).unwrap_or_else(|| "x".into());
@@ -28,8 +37,8 @@ fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
 
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
-            .with_inner_size([640.0, 640.0 / aspect + 220.0])
-            .with_min_inner_size([320.0, 320.0 / aspect + 220.0]),
+            .with_inner_size([BOARD_SIZE, BOARD_SIZE / aspect + LOG_HEIGHT + 60.0])
+            .with_min_inner_size([300.0, 300.0 / aspect + LOG_HEIGHT]),
         ..Default::default()
     };
     eframe::run_native(
@@ -41,6 +50,8 @@ fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
                 widget: LaunchpadUi::new(),
                 emulator,
                 hardware,
+                aspect,
+                matched_width: None,
                 log: Vec::new(),
                 decoded: 0,
             }))
@@ -55,6 +66,9 @@ struct App<S: DeviceSpec> {
     layout: Layout,
     widget: LaunchpadUi,
     hardware: bool,
+    aspect: f32,
+    /// Window width the proportions were last matched to.
+    matched_width: Option<f32>,
     log: Vec<String>,
     decoded: usize,
 }
@@ -94,6 +108,33 @@ impl<S: DeviceSpec> App<S> {
             if let Err(e) = self.emulator.send(interaction) {
                 self.note(format!("send failed: {e}"));
             }
+        }
+    }
+
+    /// Matches the window height to its width so the surface stays square.
+    ///
+    /// `chrome` is the height the bars take. Only a change in width triggers a resize, so this
+    /// settles instead of driving itself. Maximised and fullscreen windows are left alone and the
+    /// surface centres itself in whatever space there is.
+    fn hold_aspect(&mut self, ctx: &Context, chrome: f32) {
+        let (size, free) = ctx.input(|i| {
+            let v = i.viewport();
+            (
+                v.inner_rect.map(|r| r.size()),
+                !v.maximized.unwrap_or(false) && !v.fullscreen.unwrap_or(false),
+            )
+        });
+        let Some(size) = size.filter(|_| free) else {
+            self.matched_width = None;
+            return;
+        };
+        if self.matched_width.is_some_and(|w| (w - size.x).abs() < 0.5) {
+            return;
+        }
+        self.matched_width = Some(size.x);
+        let wanted = Vec2::new(size.x, size.x / self.aspect + chrome);
+        if (wanted.y - size.y).abs() > 1.0 {
+            ctx.send_viewport_cmd(ViewportCommand::InnerSize(wanted));
         }
     }
 
@@ -159,11 +200,14 @@ impl<S: DeviceSpec> eframe::App for App<S> {
             return;
         };
 
-        Panel::top("status").show(ui, |ui| self.status_bar(ui, bpm, &surface));
-        Panel::bottom("log")
+        let top = Panel::top("status").show(ui, |ui| self.status_bar(ui, bpm, &surface));
+        let bottom = Panel::bottom("log")
             .resizable(true)
-            .default_size(170.0)
+            .default_size(LOG_HEIGHT)
             .show(ui, |ui| self.log_panel(ui));
+        // Panel heights follow their content, so using them avoids feeding the resize back
+        let chrome = top.response.rect.height() + bottom.response.rect.height();
+        self.hold_aspect(ui.ctx(), chrome);
 
         let board = CentralPanel::default()
             .frame(Frame::NONE)
