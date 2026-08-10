@@ -14,7 +14,9 @@ traffic that a passive MIDI monitor cannot.
 
 ## Layout
 
-- `crates/launchpad-emulator` — the library, with no front end dependencies
+- `crates/core` — the `launchpad-emulator` library, with no front end dependencies
+- `crates/ui` — an egui widget, embeddable in any egui app
+- `crates/app` — a standalone window wrapping the widget
 
 Device differences live behind the `DeviceSpec` trait, so the emulator, the
 surface and any front end are written once. `Surface` is deliberately not
@@ -40,10 +42,22 @@ emulator.send(Interaction::Press {
 })?;
 ```
 
-To see it working against a real device:
+## Running
 
 ```
-cargo run --example smoke
+cargo run -p launchpad-emulator-app            # Launchpad X
+cargo run -p launchpad-emulator-app mini-mk3   # Launchpad Mini MK3
+```
+
+The window creates the virtual ports and draws whatever a host sends. Clicking a pad reports a
+press, and holding one ramps aftertouch pressure.
+
+Two examples help when working on it. `drive` acts as a host, lighting a pattern and sending a
+beat clock, and `loopback` checks that interactions reach a host unchanged:
+
+```
+cargo run --example drive
+cargo run --example loopback
 ```
 
 ## Platform support
