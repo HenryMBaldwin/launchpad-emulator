@@ -1,10 +1,16 @@
-//! A scrolling record of what a host has sent.
+//! A scrolling record of what a host has sent and what the program has reported.
 
 use std::collections::VecDeque;
+use std::fmt::Write as _;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Local, TimeZone};
 use egui::{ScrollArea, Ui};
 use launchpad_emulator::HostMessage;
+use tracing::field::{Field, Visit};
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::Layer;
+use tracing_subscriber::layer::Context;
 
 /// Lines kept before the oldest are dropped.
 pub const DEFAULT_LIMIT: usize = 200;
@@ -19,13 +25,17 @@ struct Entry {
     text: String,
 }
 
+/// The lines, shared with the [`Layer`] that writes into them.
+type Lines = Arc<Mutex<VecDeque<Entry>>>;
+
 /// A scrolling record of what a host has sent, hidden until asked for.
 ///
-/// Feed it [`Console::record`] for host messages, or [`Console::push`] for anything else. It draws
+/// Feed it [`Console::record`] for host messages and [`Console::push`] for anything else, or install
+/// [`Console::layer`] and let every `tracing` event in the program arrive on its own. It draws
 /// nothing while hidden, so a front end can call [`Console::show`] unconditionally.
 #[derive(Debug, Clone)]
 pub struct Console {
-    entries: VecDeque<Entry>,
+    lines: Lines,
     limit: usize,
     height: f32,
     visible: bool,
@@ -42,7 +52,7 @@ impl Console {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entries: VecDeque::new(),
+            lines: Lines::default(),
             limit: DEFAULT_LIMIT,
             height: DEFAULT_HEIGHT,
             visible: false,
@@ -70,6 +80,19 @@ impl Console {
         self
     }
 
+    /// A `tracing` layer that records every event into this console.
+    ///
+    /// Install it on a subscriber and anything the program traces arrives here, including events
+    /// from crates the front end brings itself.
+    #[must_use]
+    pub fn layer<S: Subscriber>(&self) -> ConsoleLayer<S> {
+        ConsoleLayer {
+            lines: Arc::clone(&self.lines),
+            limit: self.limit,
+            subscriber: std::marker::PhantomData,
+        }
+    }
+
     /// Whether the console is showing.
     #[must_use]
     pub const fn is_visible(&self) -> bool {
@@ -88,13 +111,7 @@ impl Console {
 
     /// Records a line.
     pub fn push(&mut self, text: impl Into<String>) {
-        self.entries.push_back(Entry {
-            at: Local::now(),
-            text: text.into(),
-        });
-        while self.entries.len() > self.limit {
-            self.entries.pop_front();
-        }
+        record_line(&self.lines, self.limit, text.into());
     }
 
     /// Records a message from the host.
@@ -109,26 +126,35 @@ impl Console {
 
     /// Drops every line.
     pub fn clear(&mut self) {
-        self.entries.clear();
+        if let Ok(mut lines) = self.lines.lock() {
+            lines.clear();
+        }
     }
 
     /// How many lines are held.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.lines.lock().map_or(0, |lines| lines.len())
     }
 
     /// Whether no lines are held.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.len() == 0
     }
 
     /// The lines held, oldest first, each stamped with the time it arrived.
-    pub fn lines(&self) -> impl Iterator<Item = String> + use<'_> {
-        self.entries
-            .iter()
-            .map(|entry| format!("{} {}", stamp(&entry.at), entry.text))
+    #[must_use]
+    pub fn lines(&self) -> Vec<String> {
+        self.lines.lock().map_or_else(
+            |_| Vec::new(),
+            |lines| {
+                lines
+                    .iter()
+                    .map(|entry| format!("{} {}", stamp(&entry.at), entry.text))
+                    .collect()
+            },
+        )
     }
 
     /// Draws the console, and nothing at all while it is hidden.
@@ -141,14 +167,75 @@ impl Console {
         }
         ui.separator();
         ui.set_min_height(self.height);
+        let lines = self.lines();
         ScrollArea::vertical()
             .stick_to_bottom(true)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for line in self.lines() {
+                for line in lines {
                     ui.monospace(line);
                 }
             });
+    }
+}
+
+/// A `tracing` layer writing events into a [`Console`].
+#[derive(Debug)]
+pub struct ConsoleLayer<S> {
+    lines: Lines,
+    limit: usize,
+    subscriber: std::marker::PhantomData<fn(S)>,
+}
+
+impl<S: Subscriber> Layer<S> for ConsoleLayer<S> {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        let mut fields = Fields::default();
+        event.record(&mut fields);
+        let level = short_level(*event.metadata().level());
+        record_line(&self.lines, self.limit, format!("{level} {}", fields.text));
+    }
+}
+
+/// The fields of a `tracing` event, flattened into one line.
+#[derive(Default)]
+struct Fields {
+    text: String,
+}
+
+impl Visit for Fields {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if !self.text.is_empty() {
+            self.text.push(' ');
+        }
+        if field.name() == "message" {
+            let _ = write!(self.text, "{value:?}");
+        } else {
+            let _ = write!(self.text, "{}={value:?}", field.name());
+        }
+    }
+}
+
+/// Adds a line, dropping the oldest once `limit` is reached.
+fn record_line(lines: &Lines, limit: usize, text: String) {
+    if let Ok(mut lines) = lines.lock() {
+        lines.push_back(Entry {
+            at: Local::now(),
+            text,
+        });
+        while lines.len() > limit {
+            lines.pop_front();
+        }
+    }
+}
+
+/// The single letter a level is shown as.
+const fn short_level(level: Level) -> &'static str {
+    match level {
+        Level::ERROR => "E",
+        Level::WARN => "W",
+        Level::INFO => "I",
+        Level::DEBUG => "D",
+        Level::TRACE => "T",
     }
 }
 
@@ -165,6 +252,7 @@ where
 mod tests {
     use super::*;
     use launchpad_emulator::{Lighting, Pad, Rgb};
+    use tracing_subscriber::layer::SubscriberExt as _;
 
     #[test]
     fn a_new_console_is_hidden_and_empty() {
@@ -187,7 +275,8 @@ mod tests {
     fn lines_carry_a_stamp_in_brackets() {
         let mut console = Console::new();
         console.push("hello");
-        let line = console.lines().next().unwrap_or_default();
+        let lines = console.lines();
+        let line = lines.first().map(String::as_str).unwrap_or_default();
         assert!(line.starts_with('['), "got {line:?}");
         assert!(line.ends_with(" hello"), "got {line:?}");
     }
@@ -206,7 +295,7 @@ mod tests {
             console.push(line);
         }
         assert_eq!(console.len(), 2);
-        let lines: Vec<String> = console.lines().collect();
+        let lines = console.lines();
         assert!(lines[0].ends_with("two"), "got {lines:?}");
         assert!(lines[1].ends_with("three"), "got {lines:?}");
     }
@@ -232,12 +321,35 @@ mod tests {
         console.record(&HostMessage::Brightness(64));
         assert_eq!(console.len(), 1);
         assert!(
-            console
-                .lines()
-                .next()
-                .unwrap_or_default()
-                .contains("Brightness"),
+            console.lines()[0].contains("Brightness"),
             "the message should be recorded"
         );
+    }
+
+    #[test]
+    fn traced_events_arrive_with_their_level_and_fields() {
+        let console = Console::new();
+        let subscriber = tracing_subscriber::registry().with(console.layer());
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::warn!(port = "LPX", "could not send");
+        });
+
+        assert_eq!(console.len(), 1, "the event should have been recorded");
+        let line = &console.lines()[0];
+        assert!(line.contains(" W "), "the level should show: {line:?}");
+        assert!(line.contains("could not send"), "got {line:?}");
+        assert!(line.contains("port=\"LPX\""), "got {line:?}");
+    }
+
+    #[test]
+    fn a_layer_shares_the_console_limit() {
+        let console = Console::new().with_limit(1);
+        let subscriber = tracing_subscriber::registry().with(console.layer());
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!("first");
+            tracing::info!("second");
+        });
+        assert_eq!(console.len(), 1);
+        assert!(console.lines()[0].contains("second"));
     }
 }

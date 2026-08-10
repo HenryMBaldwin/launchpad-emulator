@@ -12,6 +12,7 @@ repository.workspace = true
 [dependencies]
 midir = "0.11"
 thiserror = "2"
+tracing = "0.1"
 
 [lints]
 workspace = true

@@ -9,6 +9,9 @@ use eframe::egui::{CentralPanel, Frame, Key, Panel, Slider, Ui, ViewportBuilder}
 use launchpad_emulator::devices::{LaunchpadMiniMk3, LaunchpadX};
 use launchpad_emulator::{DeviceSpec, Emulator, Interaction, Pad};
 use launchpad_emulator_ui::{Console, Labels, LaunchpadUi, Layout};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 
 /// Height of the bars above and below the surface with the console hidden.
 const CHROME: f32 = 72.0;
@@ -61,11 +64,20 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, Box<dyn Error>
 
 /// Opens the window for one device.
 fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>> {
+    // The console collects traces from the whole program, and stderr keeps them after it closes
+    let console = Console::new();
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(console.layer())
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .init();
+
     let mut emulator = match port {
         Some(name) => Emulator::<S>::new(name)?,
         None => Emulator::<S>::with_default_name()?,
     };
     let hardware = emulator.attach_hardware().is_ok();
+    tracing::info!(device = S::NAME, hardware, "ready");
 
     let options = eframe::NativeOptions {
         // Without this the window reopens at whatever size it was last dragged to
@@ -100,7 +112,7 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
                 widget,
                 emulator,
                 hardware,
-                console: Console::new(),
+                console: console.clone(),
                 decoded: 0,
             }))
         }),
@@ -128,18 +140,18 @@ impl<S: DeviceSpec> App<S> {
         match self.emulator.pump_hardware() {
             Ok(interactions) => {
                 for interaction in interactions {
-                    self.console.push(format!("hardware {interaction:?}"));
+                    tracing::info!(?interaction, "hardware");
                 }
             }
-            Err(e) => self.console.push(format!("hardware error: {e}")),
+            Err(error) => tracing::warn!(%error, "could not read the hardware"),
         }
     }
 
     /// Reports interactions produced by the widget.
     fn send(&mut self, interactions: Vec<Interaction>) {
         for interaction in interactions {
-            if let Err(e) = self.emulator.send(interaction) {
-                self.console.push(format!("send failed: {e}"));
+            if let Err(error) = self.emulator.send(interaction) {
+                tracing::warn!(%error, "could not report the interaction");
             }
         }
     }
