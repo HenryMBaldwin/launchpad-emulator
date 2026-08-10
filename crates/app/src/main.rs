@@ -20,6 +20,9 @@ const LOG_HEIGHT: f32 = 120.0;
 /// Width the surface opens at.
 const BOARD_SIZE: f32 = 460.0;
 
+/// Smallest the surface is allowed to become.
+const MIN_BOARD: f32 = 280.0;
+
 fn main() -> Result<(), Box<dyn Error>> {
     let device = std::env::args().nth(1).unwrap_or_else(|| "x".into());
     match device.as_str() {
@@ -38,7 +41,7 @@ fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_inner_size([BOARD_SIZE, BOARD_SIZE / aspect + LOG_HEIGHT + 60.0])
-            .with_min_inner_size([300.0, 300.0 / aspect + LOG_HEIGHT]),
+            .with_min_inner_size([MIN_BOARD, MIN_BOARD / aspect + LOG_HEIGHT]),
         ..Default::default()
     };
     eframe::run_native(
@@ -51,7 +54,7 @@ fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
                 emulator,
                 hardware,
                 aspect,
-                matched_width: None,
+                matched: None,
                 log: Vec::new(),
                 decoded: 0,
             }))
@@ -67,8 +70,8 @@ struct App<S: DeviceSpec> {
     widget: LaunchpadUi,
     hardware: bool,
     aspect: f32,
-    /// Window width the proportions were last matched to.
-    matched_width: Option<f32>,
+    /// Window size the proportions were last matched to.
+    matched: Option<Vec2>,
     log: Vec<String>,
     decoded: usize,
 }
@@ -111,11 +114,12 @@ impl<S: DeviceSpec> App<S> {
         }
     }
 
-    /// Matches the window height to its width so the surface stays square.
+    /// Keeps the window shaped so the surface stays square.
     ///
-    /// `chrome` is the height the bars take. Only a change in width triggers a resize, so this
-    /// settles instead of driving itself. Maximised and fullscreen windows are left alone and the
-    /// surface centres itself in whatever space there is.
+    /// Windows have no aspect constraint of their own, so this corrects the dimension the pointer
+    /// did not drag: widen the window and the height follows, shorten it and the width follows.
+    /// `chrome` is the height the bars take. Maximised and fullscreen windows are left alone and
+    /// the surface centres itself in whatever space there is.
     fn hold_aspect(&mut self, ctx: &Context, chrome: f32) {
         let (size, free) = ctx.input(|i| {
             let v = i.viewport();
@@ -125,17 +129,22 @@ impl<S: DeviceSpec> App<S> {
             )
         });
         let Some(size) = size.filter(|_| free) else {
-            self.matched_width = None;
+            self.matched = None;
             return;
         };
-        if self.matched_width.is_some_and(|w| (w - size.x).abs() < 0.5) {
-            return;
-        }
-        self.matched_width = Some(size.x);
-        let wanted = Vec2::new(size.x, size.x / self.aspect + chrome);
-        if (wanted.y - size.y).abs() > 1.0 {
+
+        let moved = self.matched.unwrap_or(size) - size;
+        let wanted = if moved.x.abs() >= moved.y.abs() {
+            Vec2::new(size.x, size.x / self.aspect + chrome)
+        } else {
+            Vec2::new((size.y - chrome).max(MIN_BOARD) * self.aspect, size.y)
+        };
+        let wanted = wanted.max(Vec2::new(MIN_BOARD, MIN_BOARD / self.aspect + chrome));
+
+        if (wanted - size).abs().max_elem() > 1.0 {
             ctx.send_viewport_cmd(ViewportCommand::InnerSize(wanted));
         }
+        self.matched = Some(wanted);
     }
 
     /// Draws the strip describing what the host has asked for.
