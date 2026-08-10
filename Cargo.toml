@@ -13,7 +13,7 @@ future_incompatible = { level = "deny", priority = -1 }
 missing_debug_implementations = "warn"
 missing_docs = "warn"
 nonstandard_style = { level = "deny", priority = -1 }
-unsafe_code = "deny"
+unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
