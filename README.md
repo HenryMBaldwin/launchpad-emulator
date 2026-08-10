@@ -45,9 +45,9 @@ emulator.send(Interaction::Press {
 ## Running
 
 ```
-cargo run -p launchpad-emulator-app                      # Launchpad X
-cargo run -p launchpad-emulator-app mini-mk3             # Launchpad Mini MK3
-cargo run -p launchpad-emulator-app --port "My Pad"      # a name of your own
+cargo run --bin launchpad-emulator                      # Launchpad X
+cargo run --bin launchpad-emulator mini-mk3             # Launchpad Mini MK3
+cargo run --bin launchpad-emulator --port "My Pad"      # a name of your own
 ```
 
 The virtual ports are named after the hardware, so a host that discovers a Launchpad by port name

@@ -7,6 +7,10 @@ license.workspace = true
 readme.workspace = true
 repository.workspace = true
 
+[[bin]]
+name = "launchpad-emulator"
+path = "src/main.rs"
+
 [dependencies]
 eframe = "0.36"
 launchpad-emulator = { version = "0.1.0", path = "../core" }
