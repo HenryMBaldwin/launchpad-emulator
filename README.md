@@ -106,6 +106,21 @@ let widget = LaunchpadUi::new().with_labels(labels);
 
 Labels are drawn as egui tooltips, and are tweaked the same way.
 
+### Console
+
+`Console` records what the host has sent, stamped with the time it arrived. It starts hidden and
+draws nothing until shown, so a front end can call `show` unconditionally.
+
+```rust
+use launchpad_emulator_ui::Console;
+
+let mut console = Console::new().with_visible(true).with_limit(500);
+console.push("connected");
+```
+
+`record` takes a `HostMessage` and skips the lighting and clock messages that arrive continuously.
+`push` takes any line.
+
 ## Platform support
 
 macOS and Linux. Windows has no virtual MIDI ports, so the crate does not build

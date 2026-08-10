@@ -5,16 +5,13 @@ mod icon;
 use std::error::Error;
 use std::time::Duration;
 
-use eframe::egui::{CentralPanel, Frame, Key, Panel, ScrollArea, Slider, Ui, ViewportBuilder};
+use eframe::egui::{CentralPanel, Frame, Key, Panel, Slider, Ui, ViewportBuilder};
 use launchpad_emulator::devices::{LaunchpadMiniMk3, LaunchpadX};
-use launchpad_emulator::{DeviceSpec, Emulator, HostMessage, Interaction, Pad};
-use launchpad_emulator_ui::{Labels, LaunchpadUi, Layout};
+use launchpad_emulator::{DeviceSpec, Emulator, Interaction, Pad};
+use launchpad_emulator_ui::{Console, Labels, LaunchpadUi, Layout};
 
-/// Messages kept in the activity log.
-const LOG_LIMIT: usize = 200;
-
-/// Height the console opens at.
-const LOG_HEIGHT: f32 = 170.0;
+/// Height of the bars above and below the surface with the console hidden.
+const CHROME: f32 = 72.0;
 
 /// Width the surface opens at.
 const BOARD_SIZE: f32 = 460.0;
@@ -24,9 +21,6 @@ const MIN_BOARD: f32 = 280.0;
 
 /// Narrowest the window may be, set by the controls rather than the surface.
 const MIN_WIDTH: f32 = 520.0;
-
-/// Smallest the activity log is allowed to become.
-const MIN_LOG: f32 = 110.0;
 
 /// What the command line asked for.
 struct Args {
@@ -78,8 +72,8 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
         persist_window: false,
         viewport: ViewportBuilder::default()
             .with_icon(icon::build())
-            .with_inner_size([BOARD_SIZE, BOARD_SIZE + LOG_HEIGHT + 34.0])
-            .with_min_inner_size([MIN_WIDTH, MIN_BOARD + MIN_LOG]),
+            .with_inner_size([BOARD_SIZE, BOARD_SIZE + CHROME])
+            .with_min_inner_size([MIN_WIDTH, MIN_BOARD + CHROME]),
         ..Default::default()
     };
     eframe::run_native(
@@ -106,9 +100,8 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
                 widget,
                 emulator,
                 hardware,
-                log: Vec::new(),
+                console: Console::new(),
                 decoded: 0,
-                console: true,
             }))
         }),
     )?;
@@ -121,38 +114,24 @@ struct App<S: DeviceSpec> {
     layout: Layout,
     widget: LaunchpadUi,
     hardware: bool,
-    log: Vec<String>,
+    console: Console,
     decoded: usize,
-    /// Whether the console is showing.
-    console: bool,
 }
 
 impl<S: DeviceSpec> App<S> {
-    /// Records a line in the activity log, dropping the oldest once it is full.
-    fn note(&mut self, line: String) {
-        self.log.push(line);
-        if self.log.len() > LOG_LIMIT {
-            self.log.drain(..self.log.len() - LOG_LIMIT);
-        }
-    }
-
     /// Drains the emulator and forwards anything attached hardware reported.
     fn pump(&mut self) {
         for message in self.emulator.poll() {
             self.decoded += 1;
-            match message {
-                // Lighting and clock arrive constantly and would drown the log
-                HostMessage::Lighting { .. } | HostMessage::Clock => {}
-                other => self.note(format!("{other:?}")),
-            }
+            self.console.record(&message);
         }
         match self.emulator.pump_hardware() {
             Ok(interactions) => {
                 for interaction in interactions {
-                    self.note(format!("hardware {interaction:?}"));
+                    self.console.push(format!("hardware {interaction:?}"));
                 }
             }
-            Err(e) => self.note(format!("hardware error: {e}")),
+            Err(e) => self.console.push(format!("hardware error: {e}")),
         }
     }
 
@@ -160,7 +139,7 @@ impl<S: DeviceSpec> App<S> {
     fn send(&mut self, interactions: Vec<Interaction>) {
         for interaction in interactions {
             if let Err(e) = self.emulator.send(interaction) {
-                self.note(format!("send failed: {e}"));
+                self.console.push(format!("send failed: {e}"));
             }
         }
     }
@@ -207,26 +186,18 @@ impl<S: DeviceSpec> App<S> {
                 self.widget.set_aftertouch_on_hold(aftertouch);
             }
             ui.separator();
-            ui.toggle_value(&mut self.console, "console")
-                .on_hover_text("Show what the host has sent (`)");
+            if ui
+                .selectable_label(self.console.is_visible(), "console")
+                .on_hover_text("Show what the host has sent (`)")
+                .clicked()
+            {
+                self.console.toggle();
+            }
             ui.label(format!("{} decoded", self.decoded));
-            if self.console && ui.button("clear").clicked() {
-                self.log.clear();
+            if self.console.is_visible() && ui.button("clear").clicked() {
+                self.console.clear();
             }
         });
-    }
-
-    /// Draws the console, filling whatever height the panel has been given.
-    fn console(&mut self, ui: &mut Ui) {
-        ui.separator();
-        ScrollArea::vertical()
-            .stick_to_bottom(true)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for line in &self.log {
-                    ui.monospace(line);
-                }
-            });
     }
 }
 
@@ -243,21 +214,14 @@ impl<S: DeviceSpec> eframe::App for App<S> {
 
         Panel::top("status").show(ui, |ui| self.status_bar(ui, bpm, &surface));
         if ui.ctx().input(|i| i.key_pressed(Key::Backtick)) {
-            self.console = !self.console;
+            self.console.toggle();
         }
-        let mut panel = Panel::bottom("console").resizable(self.console);
-        if self.console {
-            panel = panel
-                .default_size(LOG_HEIGHT)
-                .size_range(MIN_LOG..=f32::INFINITY);
-        }
-        panel.show(ui, |ui| {
-            self.controls(ui);
-            if self.console {
-                ui.set_min_height(LOG_HEIGHT);
-                self.console(ui);
-            }
-        });
+        Panel::bottom("console")
+            .resizable(self.console.is_visible())
+            .show(ui, |ui| {
+                self.controls(ui);
+                self.console.show(ui);
+            });
 
         let board = CentralPanel::default()
             .frame(Frame::NONE)
