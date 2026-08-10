@@ -36,6 +36,7 @@ pub mod devices;
 mod emulator;
 mod message;
 mod pad;
+mod role;
 mod surface;
 
 pub use clock::{Clock, DEFAULT_BPM, TICKS_PER_BEAT};
@@ -43,6 +44,7 @@ pub use color::Rgb;
 pub use emulator::Emulator;
 pub use message::{HostMessage, Interaction};
 pub use pad::Pad;
+pub use role::PadRole;
 pub use surface::{Lighting, MAX_BRIGHTNESS, Surface, TextScroll};
 
 /// The behaviour that differs between Launchpad models, implemented by a marker per device.
@@ -64,8 +66,13 @@ pub trait DeviceSpec {
     /// The note or control change number addressing a pad, or `None` when it lies off the surface.
     fn pad_to_midi(pad: Pad) -> Option<u8>;
 
+    /// What kind of control occupies a position.
+    fn role(pad: Pad) -> PadRole;
+
     /// Whether a pad can be pressed, as opposed to only lit.
-    fn is_button(pad: Pad) -> bool;
+    fn is_button(pad: Pad) -> bool {
+        Self::role(pad).is_button()
+    }
 
     /// Resolves a palette entry to a colour.
     fn palette(entry: u8) -> Option<Rgb>;

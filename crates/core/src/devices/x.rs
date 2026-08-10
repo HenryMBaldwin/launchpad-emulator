@@ -3,7 +3,7 @@
 use super::{mk3_family as family, palette};
 use crate::message::{HostMessage, Interaction};
 use crate::pad::Pad;
-use crate::{DeviceSpec, Rgb};
+use crate::{DeviceSpec, PadRole, Rgb};
 
 /// Device ID this model answers to in `SysEx` messages.
 pub const DEVICE_ID: u8 = 0x0C;
@@ -29,8 +29,8 @@ impl DeviceSpec for LaunchpadX {
         family::pad_to_midi(pad)
     }
 
-    fn is_button(pad: Pad) -> bool {
-        !family::is_logo(pad) && family::pad_to_midi(pad).is_some()
+    fn role(pad: Pad) -> PadRole {
+        family::role(pad)
     }
 
     fn palette(entry: u8) -> Option<Rgb> {

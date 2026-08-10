@@ -1,0 +1,16 @@
+[package]
+name = "launchpad-emulator-app"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+
+[dependencies]
+eframe = "0.36"
+launchpad-emulator = { version = "0.1.0", path = "../core" }
+launchpad-emulator-ui = { version = "0.1.0", path = "../ui" }
+
+[lints]
+workspace = true
