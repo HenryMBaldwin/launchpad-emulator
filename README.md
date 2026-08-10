@@ -51,6 +51,12 @@ cargo run --example smoke
 Virtual MIDI ports are unavailable on Windows, so this crate does not build
 there. macOS (CoreMIDI) and Linux (ALSA, JACK) are supported.
 
+Building on Linux needs the ALSA development headers:
+
+```
+sudo apt-get install libasound2-dev
+```
+
 ## Colour palette
 
 The 128 palette colours were sampled from the chart in the Launchpad X
