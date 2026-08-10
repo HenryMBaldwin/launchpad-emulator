@@ -1,0 +1,17 @@
+[package]
+name = "launchpad-emulator"
+version = "0.1.0"
+description = "Novation Launchpad emulators that present themselves as virtual MIDI devices"
+keywords = ["novation", "launchpad", "midi", "emulator", "midi-controller"]
+categories = ["emulators", "api-bindings", "multimedia"]
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+
+[dependencies]
+midir = "0.11"
+thiserror = "2"
+
+[lints]
+workspace = true

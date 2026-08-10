@@ -19,14 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Install ALSA
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Lint Rust
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
 
   cargo-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Install ALSA
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Test Rust
         run: cargo test --workspace
 
