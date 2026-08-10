@@ -208,17 +208,17 @@ impl<S: DeviceSpec> Emulator<S> {
             .map_err(|_| Error::Poisoned)
     }
 
-    /// How far through the current beat we are, in `0.0..1.0`.
+    /// Beats elapsed, counting up without wrapping.
     ///
     /// Pass this to [`Surface::color_at`] so flashing and pulsing follow the host's tempo.
     ///
     /// # Errors
     ///
     /// Fails if a thread holding the clock lock panicked.
-    pub fn phase(&self) -> Result<f32, Error> {
+    pub fn beats(&self) -> Result<f32, Error> {
         self.clock
             .lock()
-            .map(|clock| clock.phase(Instant::now()))
+            .map(|clock| clock.beats(Instant::now()))
             .map_err(|_| Error::Poisoned)
     }
 

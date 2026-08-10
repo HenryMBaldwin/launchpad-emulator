@@ -23,22 +23,41 @@ pub enum Lighting {
     Pulsing(Rgb),
 }
 
+/// Dimmest a pulsing colour goes, as the manual's waveform shows.
+const PULSE_FLOOR: f32 = 0.25;
+
+/// Fraction of a pulse period spent rising, half a beat of the two.
+const PULSE_RISE: f32 = 0.25;
+
 impl Lighting {
-    /// The colour to draw at `phase` through the current beat, in `0.0..1.0`.
+    /// The colour to draw at `beats` elapsed.
+    ///
+    /// Flashing has a period of one beat and pulsing two, matching the hardware.
     #[must_use]
-    pub fn color_at(self, phase: f32) -> Rgb {
+    pub fn color_at(self, beats: f32) -> Rgb {
         match self {
             Self::Static(color) => color,
             Self::Flashing { a, b } => {
-                if phase < 0.5 {
+                if beats.rem_euclid(1.0) < 0.5 {
                     a
                 } else {
                     b
                 }
             }
-            Self::Pulsing(color) => color.scaled(1.0 - (phase * 2.0 - 1.0).abs()),
+            Self::Pulsing(color) => color.scaled(pulse_level(beats)),
         }
     }
+}
+
+/// Brightness of a pulse at `beats` elapsed, rising quickly then falling away.
+fn pulse_level(beats: f32) -> f32 {
+    let phase = (beats / 2.0).rem_euclid(1.0);
+    let climb = if phase < PULSE_RISE {
+        phase / PULSE_RISE
+    } else {
+        1.0 - (phase - PULSE_RISE) / (1.0 - PULSE_RISE)
+    };
+    PULSE_FLOOR + (1.0 - PULSE_FLOOR) * climb
 }
 
 impl Default for Lighting {
@@ -145,16 +164,16 @@ impl Surface {
             .unwrap_or_default()
     }
 
-    /// The colour to draw for a pad at `phase` through the current beat, in `0.0..1.0`.
+    /// The colour to draw for a pad at `beats` elapsed.
     ///
     /// Returns black while the surface is asleep, and scales everything else by the brightness.
     #[must_use]
-    pub fn color_at(&self, pad: Pad, phase: f32) -> Rgb {
+    pub fn color_at(&self, pad: Pad, beats: f32) -> Rgb {
         if self.asleep {
             return Rgb::BLACK;
         }
         let level = f32::from(self.brightness) / f32::from(MAX_BRIGHTNESS);
-        self.lighting(pad).color_at(phase).scaled(level)
+        self.lighting(pad).color_at(beats).scaled(level)
     }
 
     /// Overall LED brightness, from 0 to [`MAX_BRIGHTNESS`].
@@ -296,14 +315,36 @@ mod tests {
     }
 
     #[test]
-    fn flashing_alternates_and_pulsing_peaks_at_mid_beat() {
+    fn flashing_alternates_once_a_beat() {
         let flashing = Lighting::Flashing {
             a: RED,
             b: Rgb::BLACK,
         };
         assert_eq!(flashing.color_at(0.0), RED);
         assert_eq!(flashing.color_at(0.75), Rgb::BLACK);
-        assert_eq!(Lighting::Pulsing(RED).color_at(0.0), Rgb::BLACK);
+        assert_eq!(flashing.color_at(1.25), RED, "the period is one beat");
+    }
+
+    /// The manual's waveform: two beats long, from a quarter brightness up to full
+    #[test]
+    fn pulsing_spans_two_beats_and_never_goes_dark() {
+        assert!((pulse_level(0.0) - PULSE_FLOOR).abs() < 0.001);
+        assert!(
+            (pulse_level(0.5) - 1.0).abs() < 0.001,
+            "peaks half a beat in"
+        );
+        assert!(
+            (pulse_level(2.0) - PULSE_FLOOR).abs() < 0.001,
+            "repeats every two beats"
+        );
+        for beats in [0.0, 0.3, 0.7, 1.1, 1.9, 2.4, 3.8] {
+            let level = pulse_level(beats);
+            assert!(
+                (PULSE_FLOOR..=1.0).contains(&level),
+                "level {level} at {beats} beats"
+            );
+        }
         assert_eq!(Lighting::Pulsing(RED).color_at(0.5), RED);
+        assert_ne!(Lighting::Pulsing(RED).color_at(0.0), Rgb::BLACK);
     }
 }
