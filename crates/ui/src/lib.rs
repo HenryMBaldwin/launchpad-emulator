@@ -136,7 +136,9 @@ impl Labels {
             .filter_map(|pad| {
                 let label = match (S::printed_name(pad), S::role(pad)) {
                     (Some(printed), _) => printed.to_owned(),
-                    (None, PadRole::Grid) => format!("Pad {},{}", pad.x, pad.y),
+                    // Counted from the top left of the 8x8 grid, which starts a row below the
+                    // top of the surface
+                    (None, PadRole::Grid) => format!("Grid {},{}", pad.x, pad.y - 1),
                     (None, _) => return None,
                 };
                 Some((pad, label))
@@ -526,7 +528,13 @@ mod tests {
         assert_eq!(labels.get(Pad::new(8, 0)), Some("Logo"));
         assert_eq!(labels.get(Pad::new(8, 1)), Some("Scene Launch 1"));
         assert_eq!(labels.get(Pad::new(8, 8)), Some("Scene Launch 8"));
-        assert_eq!(labels.get(Pad::new(3, 4)), Some("Pad 3,4"));
+        assert_eq!(
+            labels.get(Pad::new(0, 1)),
+            Some("Grid 0,0"),
+            "the first grid pad reads as the origin of the grid"
+        );
+        assert_eq!(labels.get(Pad::new(3, 4)), Some("Grid 3,3"));
+        assert_eq!(labels.get(Pad::new(7, 8)), Some("Grid 7,7"));
         assert_eq!(labels.len(), 81, "every pad of the surface is named");
     }
 
