@@ -26,15 +26,6 @@ monitor cannot.
 - [x] Launchpad Mini MK3
 - [ ] Launchpad Pro MK2
 
-## Layout
-
-- `crates/launchpad-emulator` — the library, with no front end dependencies
-- `crates/launchpad-emulator-ui` — an egui widget, embeddable in any egui app
-- `crates/launchpad-emulator-app` — a standalone window wrapping the widget
-
-Device differences live behind the `DeviceSpec` trait. `Surface` is not generic
-over the device.
-
 ## Running
 
 ```
@@ -121,6 +112,13 @@ sudo apt-get install libasound2-dev
 ```
 
 ## Development
+
+- `crates/launchpad-emulator` — the library, with no front end dependencies
+- `crates/launchpad-emulator-ui` — an egui widget, embeddable in any egui app
+- `crates/launchpad-emulator-app` — a standalone window wrapping the widget
+
+Device differences live behind the `DeviceSpec` trait. `Surface` is not generic
+over the device.
 
 Three examples drive the emulator without a Launchpad to hand. `drive` acts as a
 host, lighting a pattern, scrolling text and sending a beat clock; `loopback`
