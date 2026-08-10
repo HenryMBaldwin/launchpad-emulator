@@ -18,7 +18,7 @@
 
 use std::collections::BTreeMap;
 
-use egui::{Color32, CornerRadius, InnerResponse, Pos2, Rect, Response, Sense, Ui, Vec2};
+use egui::{Color32, CornerRadius, InnerResponse, Pos2, Rect, Response, Sense, Tooltip, Ui, Vec2};
 use launchpad_emulator::{DeviceSpec, Interaction, Pad, PadRole, Rgb, Surface};
 
 /// Colour of the chassis behind the pads.
@@ -313,11 +313,12 @@ impl LaunchpadUi {
             );
         }
 
-        // The label follows the pointer, so one response can describe every pad
-        let response = match hovered.and_then(|pad| self.labels.get(pad)) {
-            Some(label) => response.on_hover_text(label),
-            None => response,
-        };
+        // Anchored to the pointer, since the response covers the whole surface
+        if let Some(label) = hovered.and_then(|pad| self.labels.get(pad)) {
+            Tooltip::for_widget(&response)
+                .at_pointer()
+                .show(|ui| ui.label(label));
+        }
         InnerResponse::new(interactions, response)
     }
 
