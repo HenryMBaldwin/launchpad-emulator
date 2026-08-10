@@ -1,38 +1,67 @@
-# Rust Template Repository
+# launchpad-emulator
 
-This is a template repository for rust projects. It features the following:
+A Novation Launchpad emulator that presents itself as a MIDI device.
 
-- Rust Toolchain via a [Nix flake](./flake.nix) with [direnv](./.envrc) support
-- Commit hooks for formatting, linting, and conventional commits via
-  [prek](prek.toml)
-- Opinionated [linting configuration](Cargo.toml)
-- [GPL](LICENSE-GPL) and [MIT](LICENSE-MIT) licenses already in-repo
+The emulator creates a pair of virtual MIDI ports. A host application connects
+to those instead of the hardware, and everything it sends to light the surface
+is decoded into a `Surface` a front end can draw. Interactions travel the other
+way, so clicking a pad in a front end reaches the host as a real press would.
 
-## Getting Started
+Attaching a real Launchpad mirrors both directions at once: the host's lighting
+reaches the hardware unchanged, and hardware presses are reported to the host.
+Because the emulator sits in the signal path rather than beside it, it sees LED
+traffic that a passive MIDI monitor cannot.
 
-To get started with this template, do the following:
+## Layout
 
-1. Update the `repository` field in [Cargo.toml](./Cargo.toml)
-2. Ensure the desired rust version is correct in
-   [rust-toolchain.toml](./rust-toolchain.toml)
-3. For each crate you add under `crates/`, satisfy `clippy::cargo` by either
-   setting `publish = false` (for binaries or internal-only crates) or
-   providing all of the following `[package]` fields, since CI runs clippy with
-   `-D warnings`:
-   - `description`
-   - `license` or `license_file`
-   - `repository`
-   - `readme`
-   - `keywords`
-   - `categories`
+- `crates/launchpad-emulator` — the library, with no front end dependencies
 
-   Shared values (`edition`, `license`, `readme`, `repository`) can be
-   inherited from `[workspace.package]` via `field.workspace = true`;
-   `description`, `keywords`, and `categories` are usually set per-crate.
+Device differences live behind the `DeviceSpec` trait, so the emulator, the
+surface and any front end are written once. `Surface` is deliberately not
+generic over the device, which keeps front ends free of type parameters.
+
+Currently implemented: Launchpad X and Launchpad Mini MK3.
+
+## Usage
+
+```rust
+use launchpad_emulator::{devices::LaunchpadX, Emulator, Interaction, Pad};
+
+let mut emulator = Emulator::<LaunchpadX>::with_default_name()?;
+emulator.attach_hardware()?;
+
+for message in emulator.poll() {
+    println!("{message:?}");
+}
+
+emulator.send(Interaction::Press {
+    pad: Pad::new(0, 8),
+    velocity: 100,
+})?;
+```
+
+To see it working against a real device:
+
+```
+cargo run --example smoke
+```
+
+## Platform support
+
+Virtual MIDI ports are unavailable on Windows, so this crate does not build
+there. macOS (CoreMIDI) and Linux (ALSA, JACK) are supported.
+
+## Colour palette
+
+The 128 palette colours were sampled from the chart in the Launchpad X
+Programmer's Reference Manual and rescaled so that entry 0 is the unlit black
+the hardware shows. The chart renders every channel with a floor of `0x61`;
+rescaling that floor to zero maps entry 0 to exact black and the primaries to
+pure red, green and blue.
 
 ## License
 
-This template is licensed under the [MIT License](./LICENSE-MIT).
+Licensed under the [MIT License](./LICENSE-MIT).
 
 Any contribution intentionally submitted for inclusion in this repository shall
 be licensed as above, without any additional terms or conditions.
