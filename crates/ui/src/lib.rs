@@ -101,6 +101,103 @@ impl Layout {
     }
 }
 
+/// Labels shown while the pointer rests on a pad.
+///
+/// Build a set and lay changes over it, so an application can start from what the device says and
+/// replace only the pads it has bound:
+///
+/// ```
+/// # use launchpad_emulator::{devices::LaunchpadX, Pad};
+/// # use launchpad_emulator_ui::Labels;
+/// let labels = Labels::defaults::<LaunchpadX>()
+///     .with(Pad::new(0, 8), "kick")
+///     .with(Pad::new(1, 8), "snare")
+///     .without(Pad::new(8, 0));
+/// assert_eq!(labels.get(Pad::new(0, 8)), Some("kick"));
+/// assert_eq!(labels.get(Pad::new(0, 0)), Some("Up"));
+/// assert_eq!(labels.get(Pad::new(8, 0)), None);
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Labels {
+    entries: BTreeMap<Pad, String>,
+}
+
+impl Labels {
+    /// No labels, so nothing appears on hover.
+    #[must_use]
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// What the device itself says: the printing beside each button, and coordinates for the grid.
+    #[must_use]
+    pub fn defaults<S: DeviceSpec>() -> Self {
+        let entries = Pad::all(S::WIDTH, S::HEIGHT)
+            .filter_map(|pad| {
+                let label = match (S::printed_name(pad), S::role(pad)) {
+                    (Some(printed), _) => printed.to_owned(),
+                    (None, PadRole::Grid) => format!("Pad {},{}", pad.x, pad.y),
+                    (None, _) => return None,
+                };
+                Some((pad, label))
+            })
+            .collect();
+        Self { entries }
+    }
+
+    /// Labels one pad, replacing any label already there.
+    #[must_use]
+    pub fn with(mut self, pad: Pad, label: impl Into<String>) -> Self {
+        self.entries.insert(pad, label.into());
+        self
+    }
+
+    /// Labels several pads, replacing any labels already there.
+    #[must_use]
+    pub fn with_all<I, L>(mut self, labels: I) -> Self
+    where
+        I: IntoIterator<Item = (Pad, L)>,
+        L: Into<String>,
+    {
+        for (pad, label) in labels {
+            self.entries.insert(pad, label.into());
+        }
+        self
+    }
+
+    /// Takes the label off one pad.
+    #[must_use]
+    pub fn without(mut self, pad: Pad) -> Self {
+        self.entries.remove(&pad);
+        self
+    }
+
+    /// Lays another set over this one, the other set's labels winning.
+    #[must_use]
+    pub fn overlay(mut self, other: Self) -> Self {
+        self.entries.extend(other.entries);
+        self
+    }
+
+    /// The label on a pad, if it has one.
+    #[must_use]
+    pub fn get(&self, pad: Pad) -> Option<&str> {
+        self.entries.get(&pad).map(String::as_str)
+    }
+
+    /// How many pads carry a label.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether no pad carries a label.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
 /// A pad currently held down by the pointer.
 #[derive(Debug, Clone, Copy)]
 struct Held {
@@ -115,7 +212,7 @@ pub struct LaunchpadUi {
     velocity: u8,
     aftertouch_on_hold: bool,
     held: Option<Held>,
-    labels: BTreeMap<Pad, String>,
+    labels: Labels,
 }
 
 impl Default for LaunchpadUi {
@@ -132,31 +229,26 @@ impl LaunchpadUi {
             velocity: 127,
             aftertouch_on_hold: true,
             held: None,
-            labels: BTreeMap::new(),
+            labels: Labels::none(),
         }
     }
 
-    /// Gives a pad a label, shown while the pointer rests on it.
-    ///
-    /// Useful for naming what an application has bound each pad to.
-    pub fn set_label(&mut self, pad: Pad, label: impl Into<String>) {
-        self.labels.insert(pad, label.into());
-    }
-
-    /// The label on a pad, if it has one.
+    /// Replaces the labels shown on hover.
     #[must_use]
-    pub fn label(&self, pad: Pad) -> Option<&str> {
-        self.labels.get(&pad).map(String::as_str)
+    pub fn with_labels(mut self, labels: Labels) -> Self {
+        self.labels = labels;
+        self
     }
 
-    /// Takes the label off a pad, returning it.
-    pub fn remove_label(&mut self, pad: Pad) -> Option<String> {
-        self.labels.remove(&pad)
+    /// Replaces the labels shown on hover.
+    pub fn set_labels(&mut self, labels: Labels) {
+        self.labels = labels;
     }
 
-    /// Removes every label.
-    pub fn clear_labels(&mut self) {
-        self.labels.clear();
+    /// The labels shown on hover.
+    #[must_use]
+    pub const fn labels(&self) -> &Labels {
+        &self.labels
     }
 
     /// Velocity reported for a click, in `1..=127`.
@@ -222,7 +314,7 @@ impl LaunchpadUi {
         }
 
         // The label follows the pointer, so one response can describe every pad
-        let response = match hovered.and_then(|pad| self.labels.get(&pad)) {
+        let response = match hovered.and_then(|pad| self.labels.get(pad)) {
             Some(label) => response.on_hover_text(label),
             None => response,
         };
@@ -425,26 +517,57 @@ mod tests {
     }
 
     #[test]
-    fn labels_can_be_set_read_and_removed() {
-        let mut widget = LaunchpadUi::new();
-        let pad = Pad::new(2, 3);
-        assert_eq!(widget.label(pad), None);
-        widget.set_label(pad, "kick");
-        assert_eq!(widget.label(pad), Some("kick"));
-        widget.set_label(pad, "snare");
-        assert_eq!(widget.label(pad), Some("snare"), "setting again replaces");
-        assert_eq!(widget.remove_label(pad), Some("snare".into()));
-        assert_eq!(widget.label(pad), None);
+    fn defaults_name_the_controls_and_number_the_grid() {
+        let labels = Labels::defaults::<LaunchpadX>();
+        assert_eq!(labels.get(Pad::new(0, 0)), Some("Up"));
+        assert_eq!(labels.get(Pad::new(7, 0)), Some("Capture MIDI"));
+        assert_eq!(labels.get(Pad::new(8, 0)), Some("Logo"));
+        assert_eq!(labels.get(Pad::new(8, 1)), Some("Scene Launch 1"));
+        assert_eq!(labels.get(Pad::new(8, 8)), Some("Scene Launch 8"));
+        assert_eq!(labels.get(Pad::new(3, 4)), Some("Pad 3,4"));
+        assert_eq!(labels.len(), 81, "every pad of the surface is named");
     }
 
     #[test]
-    fn clearing_removes_every_label() {
+    fn none_labels_nothing() {
+        let labels = Labels::none();
+        assert!(labels.is_empty());
+        assert_eq!(labels.get(Pad::new(0, 0)), None);
+    }
+
+    #[test]
+    fn later_layers_win() {
+        let base = Labels::defaults::<LaunchpadX>();
+        let labels = base
+            .clone()
+            .with(Pad::new(0, 0), "first")
+            .with(Pad::new(0, 0), "second");
+        assert_eq!(labels.get(Pad::new(0, 0)), Some("second"));
+
+        let overlaid = base.overlay(Labels::none().with(Pad::new(0, 0), "mine"));
+        assert_eq!(overlaid.get(Pad::new(0, 0)), Some("mine"));
+        assert_eq!(
+            overlaid.get(Pad::new(1, 0)),
+            Some("Down"),
+            "pads the overlay leaves alone keep their default"
+        );
+    }
+
+    #[test]
+    fn with_all_and_without_edit_several_at_once() {
+        let labels = Labels::none()
+            .with_all([(Pad::new(0, 0), "a"), (Pad::new(1, 0), "b")])
+            .without(Pad::new(0, 0));
+        assert_eq!(labels.get(Pad::new(0, 0)), None);
+        assert_eq!(labels.get(Pad::new(1, 0)), Some("b"));
+    }
+
+    #[test]
+    fn a_widget_starts_unlabelled_and_takes_a_set() {
         let mut widget = LaunchpadUi::new();
-        widget.set_label(Pad::new(0, 0), "a");
-        widget.set_label(Pad::new(1, 0), "b");
-        widget.clear_labels();
-        assert_eq!(widget.label(Pad::new(0, 0)), None);
-        assert_eq!(widget.label(Pad::new(1, 0)), None);
+        assert!(widget.labels().is_empty());
+        widget.set_labels(Labels::defaults::<LaunchpadX>());
+        assert_eq!(widget.labels().get(Pad::new(0, 0)), Some("Up"));
     }
 
     #[test]

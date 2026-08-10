@@ -14,8 +14,8 @@ pub use x::LaunchpadX;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::DeviceSpec;
     use crate::message::HostMessage;
+    use crate::{DeviceSpec, Pad};
 
     /// A brightness message addressed to a given device ID.
     fn brightness(device_id: u8) -> Vec<u8> {
@@ -32,6 +32,31 @@ mod tests {
             LaunchpadX::HARDWARE_KEYWORD,
             LaunchpadMiniMk3::HARDWARE_KEYWORD
         );
+    }
+
+    #[test]
+    fn both_devices_name_every_button_but_no_grid_pad() {
+        for (top_left, sixth) in [
+            (
+                LaunchpadX::printed_name(Pad::new(0, 0)),
+                LaunchpadX::printed_name(Pad::new(5, 0)),
+            ),
+            (
+                LaunchpadMiniMk3::printed_name(Pad::new(0, 0)),
+                LaunchpadMiniMk3::printed_name(Pad::new(5, 0)),
+            ),
+        ] {
+            assert_eq!(top_left, Some("Up"));
+            assert!(sixth.is_some(), "the sixth top button is named");
+        }
+        // The models differ where their printing differs
+        assert_eq!(LaunchpadX::printed_name(Pad::new(5, 0)), Some("Note"));
+        assert_eq!(
+            LaunchpadMiniMk3::printed_name(Pad::new(5, 0)),
+            Some("Drums")
+        );
+        assert_eq!(LaunchpadX::printed_name(Pad::new(3, 4)), None);
+        assert_eq!(LaunchpadX::printed_name(Pad::new(8, 0)), Some("Logo"));
     }
 
     #[test]

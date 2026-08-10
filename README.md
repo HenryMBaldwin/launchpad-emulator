@@ -91,12 +91,21 @@ uppercase glyph and anything else is skipped, so it is narrower than what the ha
 
 ## Labels
 
-A front end can name what each pad is bound to, shown while the pointer rests on it:
+Each pad can carry a label, shown while the pointer rests on it. `Labels::defaults` names the
+buttons with the words printed on the device and numbers the grid, `Labels::none` starts empty, and
+layers go on top of either:
 
 ```rust
-# use launchpad_emulator::Pad;
-# let mut widget = launchpad_emulator_ui::LaunchpadUi::new();
-widget.set_label(Pad::new(0, 8), "kick");
+use launchpad_emulator::{devices::LaunchpadX, Pad};
+use launchpad_emulator_ui::{Labels, LaunchpadUi};
+
+let labels = Labels::defaults::<LaunchpadX>()
+    .with(Pad::new(0, 8), "kick")
+    .with_all([(Pad::new(1, 8), "snare"), (Pad::new(2, 8), "hat")])
+    .overlay(Labels::none().with(Pad::new(0, 0), "shift"))
+    .without(Pad::new(8, 0));
+
+let widget = LaunchpadUi::new().with_labels(labels);
 ```
 
 ## Identifying as a Launchpad

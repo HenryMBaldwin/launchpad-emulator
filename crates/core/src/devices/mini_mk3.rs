@@ -6,6 +6,11 @@ use crate::pad::Pad;
 use crate::surface::Surface;
 use crate::{DeviceSpec, PadRole, Rgb};
 
+/// Words printed along the top row, left first.
+const TOP_ROW: [&str; 8] = [
+    "Up", "Down", "Left", "Right", "Session", "Drums", "Keys", "User",
+];
+
 /// Device ID this model answers to in `SysEx` messages.
 pub const DEVICE_ID: u8 = 0x0D;
 
@@ -33,6 +38,10 @@ impl DeviceSpec for LaunchpadMiniMk3 {
 
     fn role(pad: Pad) -> PadRole {
         family::role(pad)
+    }
+
+    fn printed_name(pad: Pad) -> Option<&'static str> {
+        family::printed_name(pad, &TOP_ROW)
     }
 
     fn palette(entry: u8) -> Option<Rgb> {

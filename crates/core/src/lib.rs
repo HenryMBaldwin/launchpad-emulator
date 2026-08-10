@@ -79,6 +79,14 @@ pub trait DeviceSpec {
     /// What kind of control occupies a position.
     fn role(pad: Pad) -> PadRole;
 
+    /// The name printed on the device beside a pad, for pads that carry one.
+    ///
+    /// Grid pads have no printing, so they return `None`.
+    fn printed_name(pad: Pad) -> Option<&'static str> {
+        let _ = pad;
+        None
+    }
+
     /// Whether a pad can be pressed, as opposed to only lit.
     fn is_button(pad: Pad) -> bool {
         Self::role(pad).is_button()

@@ -6,7 +6,7 @@ use std::time::Duration;
 use eframe::egui::{CentralPanel, Frame, Panel, ScrollArea, Slider, Ui, ViewportBuilder};
 use launchpad_emulator::devices::{LaunchpadMiniMk3, LaunchpadX};
 use launchpad_emulator::{DeviceSpec, Emulator, HostMessage, Interaction, Pad};
-use launchpad_emulator_ui::{LaunchpadUi, Layout};
+use launchpad_emulator_ui::{Labels, LaunchpadUi, Layout};
 
 /// Messages kept in the activity log.
 const LOG_LIMIT: usize = 200;
@@ -83,13 +83,15 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
         S::NAME,
         options,
         Box::new(move |_cc| {
-            let mut widget = LaunchpadUi::new();
-            for pad in Pad::all(S::WIDTH, S::HEIGHT) {
-                if let Some(number) = S::pad_to_midi(pad) {
-                    let role = S::role(pad);
-                    widget.set_label(pad, format!("({}, {})  {role:?}  {number}", pad.x, pad.y));
-                }
-            }
+            // The device's own names, with what each pad sends laid over the top
+            let names = Labels::defaults::<S>();
+            let numbers: Vec<_> = Pad::all(S::WIDTH, S::HEIGHT)
+                .filter_map(|pad| {
+                    let name = names.get(pad)?;
+                    Some((pad, format!("{name}  ({})", S::pad_to_midi(pad)?)))
+                })
+                .collect();
+            let widget = LaunchpadUi::new().with_labels(names.clone().with_all(numbers));
             Ok(Box::new(App {
                 layout: Layout::for_device::<S>(),
                 widget,
