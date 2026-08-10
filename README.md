@@ -2,10 +2,11 @@
 
 A Novation Launchpad emulator that presents itself as a MIDI device.
 
-The emulator creates a pair of virtual MIDI ports. A host application connects
-to those instead of the hardware, and everything it sends to light the surface
-is decoded into a `Surface` a front end can draw. Interactions travel the other
-way, so clicking a pad in a front end reaches the host as a real press would.
+The emulator presents itself as a pair of virtual MIDI ports, or as nothing at
+all when embedded. A host connects to it instead of the hardware, and everything
+it sends to light the surface is decoded into a `Surface` a front end can draw.
+Interactions travel the other way, so clicking a pad in a front end reaches the
+host as a real press would.
 
 Attaching a real Launchpad mirrors both directions at once: the host's lighting
 reaches the hardware unchanged, and hardware presses are reported to the host.
@@ -47,12 +48,25 @@ emulator.send(Interaction::Press {
 ```
 cargo run --bin launchpad-emulator                      # Launchpad X
 cargo run --bin launchpad-emulator mini-mk3             # Launchpad Mini MK3
-cargo run --bin launchpad-emulator --port "My Pad"      # a name of your own
+cargo run --bin launchpad-emulator -- --port "My Pad"   # a name of your own
 ```
 
 The virtual ports are named after the hardware, so a host that discovers a Launchpad by port name
 finds the emulator. With real hardware attached as well the match is ambiguous and the host may pick
 either, so select the port explicitly in that case.
+
+The window draws whatever a host sends. Clicking a pad reports a press, holding one ramps aftertouch
+pressure, and resting the pointer on one shows its label.
+
+Three examples help when working on it. `drive` acts as a host, lighting a pattern, scrolling text
+and sending a beat clock; `loopback` checks that interactions reach a host and that queries are
+answered; `smoke` drives the surface and prints it as coloured blocks:
+
+```
+cargo run --example drive
+cargo run --example loopback
+cargo run --example smoke
+```
 
 ## Embedding
 
@@ -67,17 +81,6 @@ emulator.feed(&[0x90, 11, 5]);
 for interaction in emulator.reported() {
     println!("{interaction:?}");
 }
-```
-
-The window creates the virtual ports and draws whatever a host sends. Clicking a pad reports a
-press, and holding one ramps aftertouch pressure.
-
-Two examples help when working on it. `drive` acts as a host, lighting a pattern and sending a
-beat clock, and `loopback` checks that interactions reach a host unchanged:
-
-```
-cargo run --example drive
-cargo run --example loopback
 ```
 
 ## Text scrolling
@@ -113,8 +116,7 @@ The label is drawn as an egui tooltip at the pointer, so how quickly it appears 
 decide. The standalone app makes it immediate:
 
 ```rust
-# let ctx = egui::Context::default();
-ctx.all_styles_mut(|style| {
+cc.egui_ctx.all_styles_mut(|style| {
     style.animation_time = 0.0;
     style.interaction.tooltip_delay = 0.0;
     style.interaction.tooltip_grace_time = 0.0;
@@ -151,6 +153,9 @@ Programmer's Reference Manual and rescaled so that entry 0 is the unlit black
 the hardware shows. The chart renders every channel with a floor of `0x61`;
 rescaling that floor to zero maps entry 0 to exact black and the primaries to
 pure red, green and blue.
+
+`crates/launchpad-emulator-ui` then raises what it draws by the display gamma, so a flat fill reads
+about as brightly as a lit LED. The palette itself is left as the device defines it.
 
 ## License
 

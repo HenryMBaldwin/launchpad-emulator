@@ -56,7 +56,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, Box<dyn Error>
                 parsed.port = Some(args.next().ok_or("--port needs a name")?);
             }
             "-h" | "--help" => {
-                println!("usage: launchpad-emulator-app [x|mini-mk3] [--port NAME]");
+                println!("usage: launchpad-emulator [x|mini-mk3] [--port NAME]");
                 std::process::exit(0);
             }
             other => parsed.device = other.into(),
