@@ -159,9 +159,11 @@ impl LaunchpadUi {
         surface: &Surface,
         phase: f32,
     ) -> InnerResponse<Vec<Interaction>> {
-        let side = ui.available_size().min_elem().max(180.0);
-        let (response, painter) = ui.allocate_painter(Vec2::splat(side), Sense::click_and_drag());
-        let board = response.rect;
+        // Claim the whole space, then centre a square in it so extra width or height is even
+        let available = ui.available_size();
+        let side = available.min_elem().max(180.0);
+        let (response, painter) = ui.allocate_painter(available, Sense::click_and_drag());
+        let board = Rect::from_center_size(response.rect.center(), Vec2::splat(side));
         let cell = side / f32::from(layout.width().max(layout.height()).max(1));
 
         // Resolve the pointer first so a press outlines its pad on the same frame

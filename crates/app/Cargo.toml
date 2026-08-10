@@ -12,14 +12,5 @@ eframe = "0.36"
 launchpad-emulator = { version = "0.1.0", path = "../core" }
 launchpad-emulator-ui = { version = "0.1.0", path = "../ui" }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3", features = [
-  "NSResponder",
-  "NSView",
-  "NSWindow",
-] }
-objc2-foundation = { version = "0.3", features = ["NSGeometry"] }
-raw-window-handle = "0.6"
-
 [lints]
 workspace = true

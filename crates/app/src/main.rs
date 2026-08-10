@@ -12,10 +12,10 @@ use launchpad_emulator_ui::{LaunchpadUi, Layout};
 const LOG_LIMIT: usize = 200;
 
 /// Height the activity log opens at.
-const LOG_HEIGHT: f32 = 120.0;
+const LOG_HEIGHT: f32 = 96.0;
 
 /// Width the surface opens at.
-const BOARD_SIZE: f32 = 460.0;
+const BOARD_SIZE: f32 = 420.0;
 
 /// Smallest the surface is allowed to become.
 const MIN_BOARD: f32 = 280.0;
@@ -38,8 +38,10 @@ fn run<S: DeviceSpec + 'static>() -> Result<(), Box<dyn Error>> {
     let hardware = emulator.attach_hardware().is_ok();
 
     let options = eframe::NativeOptions {
+        // Without this the window reopens at whatever size it was last dragged to
+        persist_window: false,
         viewport: ViewportBuilder::default()
-            .with_inner_size([BOARD_SIZE, BOARD_SIZE + LOG_HEIGHT + 60.0])
+            .with_inner_size([BOARD_SIZE, BOARD_SIZE + LOG_HEIGHT + 34.0])
             .with_min_inner_size([MIN_BOARD, MIN_BOARD + MIN_LOG]),
         ..Default::default()
     };
