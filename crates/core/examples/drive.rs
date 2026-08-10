@@ -43,6 +43,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     host.send(&sysex(&[0x0E, 0x01]))?;
     paint(&mut host)?;
 
+    // Loop some text so the scroll can be seen going
+    let mut scroll = sysex(&[0x07, 1, 7, 0, 0x25]);
+    scroll.pop();
+    scroll.extend_from_slice(b"HELLO 123");
+    scroll.push(0xF7);
+    host.send(&scroll)?;
+
     // 24 ticks per beat at 120 BPM, so flashing and pulsing have a tempo to follow
     let tick = Duration::from_secs_f64(60.0 / 120.0 / 24.0);
     for _ in 0..(24 * 120) {

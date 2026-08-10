@@ -2,7 +2,7 @@
 
 use crate::message::HostMessage;
 use crate::pad::Pad;
-use crate::{DeviceSpec, Rgb};
+use crate::{DeviceSpec, Rgb, font};
 
 /// Full brightness, as every supported device reports it.
 pub const MAX_BRIGHTNESS: u8 = 127;
@@ -105,7 +105,7 @@ pub struct TextScroll {
 }
 
 /// The lighting state of a whole surface, sized for the device that produced it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Surface {
     width: u8,
     height: u8,
@@ -114,6 +114,10 @@ pub struct Surface {
     asleep: bool,
     programmer_mode: bool,
     scroll: Option<TextScroll>,
+    /// Pixels of the running scroll, one byte per column.
+    scroll_columns: Vec<u8>,
+    /// Columns the scroll has travelled, counting from off the surface.
+    scroll_offset: f32,
     settings: Settings,
 }
 
@@ -135,6 +139,8 @@ impl Surface {
             asleep: false,
             programmer_mode: false,
             scroll: None,
+            scroll_columns: Vec::new(),
+            scroll_offset: 0.0,
             settings: Settings::default(),
         }
     }
@@ -173,7 +179,12 @@ impl Surface {
             return Rgb::BLACK;
         }
         let level = f32::from(self.brightness) / f32::from(MAX_BRIGHTNESS);
-        self.lighting(pad).color_at(beats).scaled(level)
+        // A scroll covers what is underneath until it stops or finishes
+        let color = match self.scroll_color(pad) {
+            Some(color) => color,
+            None => self.lighting(pad).color_at(beats),
+        };
+        color.scaled(level)
     }
 
     /// Overall LED brightness, from 0 to [`MAX_BRIGHTNESS`].
@@ -224,7 +235,7 @@ impl Surface {
             HostMessage::Brightness(level) => self.brightness = (*level).min(MAX_BRIGHTNESS),
             HostMessage::Sleep(asleep) => self.asleep = *asleep,
             HostMessage::ProgrammerMode(on) => self.programmer_mode = *on,
-            HostMessage::StartScroll(scroll) => self.scroll = Some(scroll.clone()),
+            HostMessage::StartScroll(scroll) => self.start_scroll(scroll.clone()),
             HostMessage::StopScroll => self.scroll = None,
             HostMessage::SetVelocityCurve {
                 curve,
@@ -239,6 +250,63 @@ impl Surface {
             }
             HostMessage::Query(_) | HostMessage::Clock | HostMessage::Unrecognised(_) => {}
         }
+    }
+
+    /// Begins a scroll, placing the text just off the edge it enters from.
+    #[allow(clippy::cast_precision_loss)]
+    fn start_scroll(&mut self, scroll: TextScroll) {
+        self.scroll_columns = font::columns(&scroll.text);
+        self.scroll_offset = if scroll.speed < 0 {
+            self.scroll_columns.len() as f32
+        } else {
+            -f32::from(self.width)
+        };
+        self.scroll = Some(scroll);
+    }
+
+    /// Moves a running scroll on by `seconds`, ending or looping it once the text has left.
+    ///
+    /// Speed is in pads per second, negative when the text travels left to right.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn advance(&mut self, seconds: f32) {
+        let Some(scroll) = self.scroll.as_ref() else {
+            return;
+        };
+        let travel = f32::from(scroll.speed) * seconds;
+        let text = self.scroll_columns.len() as f32;
+        let start = -f32::from(self.width);
+        self.scroll_offset += travel;
+
+        let gone = if scroll.speed < 0 {
+            self.scroll_offset <= start
+        } else {
+            self.scroll_offset >= text
+        };
+        if gone {
+            if scroll.looping {
+                self.scroll_offset = if scroll.speed < 0 { text } else { start };
+            } else {
+                self.scroll = None;
+                self.scroll_columns.clear();
+            }
+        }
+    }
+
+    /// The colour the running scroll paints a pad, if it covers it.
+    ///
+    /// The top row and anything past the grid are left alone, as on the hardware.
+    #[allow(clippy::cast_possible_truncation)]
+    fn scroll_color(&self, pad: Pad) -> Option<Rgb> {
+        let scroll = self.scroll.as_ref()?;
+        if pad.y == 0 || pad.y > font::HEIGHT as u8 || pad.x >= self.width {
+            return None;
+        }
+        let column = self.scroll_offset.floor() + f32::from(pad.x);
+        let lit = usize::try_from(column as i64)
+            .ok()
+            .and_then(|index| self.scroll_columns.get(index))
+            .is_some_and(|bits| (bits >> (pad.y - 1)) & 1 == 1);
+        Some(if lit { scroll.color } else { Rgb::BLACK })
     }
 
     /// Row-major index of a pad, or `None` when it lies off the surface.
@@ -312,6 +380,103 @@ mod tests {
             lighting: Lighting::Static(RED),
         });
         assert_eq!(surface.lighting(Pad::new(50, 50)), Lighting::default());
+    }
+
+    fn scrolling(text: &[u8], speed: i8, looping: bool) -> Surface {
+        let mut surface = Surface::new::<LaunchpadX>();
+        surface.apply(&HostMessage::StartScroll(TextScroll {
+            looping,
+            speed,
+            color: RED,
+            text: text.to_vec(),
+        }));
+        surface
+    }
+
+    /// The lit columns of the scroll region, as the text stands now
+    fn lit_columns(surface: &Surface) -> Vec<u8> {
+        (0..surface.width())
+            .filter(|x| (1..9).any(|y| surface.color_at(Pad::new(*x, y), 0.0) != Rgb::BLACK))
+            .collect()
+    }
+
+    #[test]
+    fn a_scroll_enters_from_the_right_and_leaves_at_the_left() {
+        let mut surface = scrolling(b"A", 9, false);
+        assert!(lit_columns(&surface).is_empty(), "starts off the surface");
+        // Two pads' worth of travel, so only the leading columns have arrived
+        surface.advance(0.2);
+        let entered = lit_columns(&surface);
+        assert!(!entered.is_empty(), "the text has started to appear");
+        assert!(
+            entered.iter().all(|x| *x >= 6),
+            "it enters at the right edge, got {entered:?}"
+        );
+    }
+
+    #[test]
+    fn a_scroll_covers_the_grid_but_not_the_top_row_or_beyond() {
+        let mut surface = scrolling(b"HELLO", 9, true);
+        surface.apply(&HostMessage::Lighting {
+            pad: Pad::new(0, 0),
+            lighting: Lighting::Static(RED),
+        });
+        surface.advance(0.5);
+        assert_eq!(
+            surface.color_at(Pad::new(0, 0), 0.0),
+            RED,
+            "the top row keeps its own colour"
+        );
+    }
+
+    #[test]
+    fn a_scroll_that_does_not_loop_ends_and_gives_the_leds_back() {
+        let mut surface = scrolling(b"A", 9, false);
+        surface.apply(&HostMessage::Lighting {
+            pad: Pad::new(0, 4),
+            lighting: Lighting::Static(RED),
+        });
+        surface.advance(10.0);
+        assert!(
+            surface.scroll().is_none(),
+            "the scroll should have finished"
+        );
+        assert_eq!(
+            surface.color_at(Pad::new(0, 4), 0.0),
+            RED,
+            "lighting covered by the scroll returns"
+        );
+    }
+
+    #[test]
+    fn a_looping_scroll_keeps_going() {
+        let mut surface = scrolling(b"A", 9, true);
+        surface.advance(60.0);
+        assert!(surface.scroll().is_some());
+    }
+
+    #[test]
+    fn a_negative_speed_scrolls_the_other_way() {
+        let mut surface = scrolling(b"A", -9, false);
+        surface.advance(0.2);
+        let entered = lit_columns(&surface);
+        assert!(!entered.is_empty());
+        assert!(
+            entered.iter().all(|x| *x <= 2),
+            "it enters at the left edge, got {entered:?}"
+        );
+    }
+
+    #[test]
+    fn stopping_a_scroll_reveals_what_was_under_it() {
+        let mut surface = scrolling(b"HELLO", 9, true);
+        surface.apply(&HostMessage::Lighting {
+            pad: Pad::new(3, 4),
+            lighting: Lighting::Static(RED),
+        });
+        surface.advance(0.5);
+        surface.apply(&HostMessage::StopScroll);
+        assert_eq!(surface.color_at(Pad::new(3, 4), 0.0), RED);
     }
 
     #[test]

@@ -34,6 +34,7 @@ mod clock;
 mod color;
 pub mod devices;
 mod emulator;
+pub mod font;
 mod message;
 mod pad;
 mod role;

@@ -41,6 +41,8 @@ pub struct Emulator<S: DeviceSpec> {
     message_sink: Sender<HostMessage>,
     /// Name of our own virtual ports, which must never be mistaken for hardware.
     port_name: Option<String>,
+    /// When a scroll was last moved on.
+    last_advance: Instant,
     device: PhantomData<S>,
 }
 
@@ -118,6 +120,7 @@ impl<S: DeviceSpec> Emulator<S> {
             message_sink,
             replies,
             port_name: Some(port_name.to_owned()),
+            last_advance: Instant::now(),
             device: PhantomData,
         })
     }
@@ -154,6 +157,7 @@ impl<S: DeviceSpec> Emulator<S> {
             clock: Arc::new(Mutex::new(Clock::new(Instant::now()))),
             message_sink,
             port_name: None,
+            last_advance: Instant::now(),
             device: PhantomData,
         }
     }
@@ -206,6 +210,26 @@ impl<S: DeviceSpec> Emulator<S> {
             .lock()
             .map(|surface| surface.clone())
             .map_err(|_| Error::Poisoned)
+    }
+
+    /// Moves a running text scroll on by however long it has been since the last call.
+    ///
+    /// Call this once a frame. Nothing else drives a scroll, so without it the text stands still.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a thread holding the surface lock panicked.
+    pub fn advance(&mut self) -> Result<(), Error> {
+        let now = Instant::now();
+        let elapsed = now
+            .saturating_duration_since(self.last_advance)
+            .as_secs_f32();
+        self.last_advance = now;
+        self.surface
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .advance(elapsed);
+        Ok(())
     }
 
     /// Beats elapsed, counting up without wrapping.
