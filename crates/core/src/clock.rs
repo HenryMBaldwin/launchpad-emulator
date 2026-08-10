@@ -1,5 +1,6 @@
 //! The beat the host's clock defines, which flashing and pulsing follow.
 
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 /// MIDI clock ticks per beat.
@@ -11,8 +12,8 @@ pub const DEFAULT_BPM: f32 = 120.0;
 /// How long a tick-driven clock keeps running after the ticks stop.
 const TIMEOUT: Duration = Duration::from_millis(750);
 
-/// Weight given to each newly measured tick interval.
-const SMOOTHING: f32 = 0.2;
+/// Ticks kept to measure tempo across, one beat's worth of intervals.
+const HISTORY: usize = TICKS_PER_BEAT as usize + 1;
 
 /// Tracks the beat that flashing and pulsing are synchronised to.
 ///
@@ -24,7 +25,10 @@ pub struct Clock {
     beat_seconds: f32,
     last_tick: Option<Instant>,
     tick_interval: Option<f32>,
-    ticks: u16,
+    /// Ticks counted since the host started sending them.
+    ticks: u64,
+    /// Recent tick instants, oldest first.
+    history: VecDeque<Instant>,
 }
 
 impl Clock {
@@ -37,24 +41,31 @@ impl Clock {
             last_tick: None,
             tick_interval: None,
             ticks: 0,
+            history: VecDeque::with_capacity(HISTORY),
         }
     }
 
     /// Records a clock tick from the host.
+    ///
+    /// Tempo is measured across the whole window rather than between consecutive ticks, so the
+    /// jitter in any one interval does not move the reported tempo.
     pub fn tick(&mut self, at: Instant) {
-        if let Some(previous) = self.last_tick {
-            let measured = at.saturating_duration_since(previous).as_secs_f32();
-            if measured > 0.0 {
-                let smoothed = match self.tick_interval {
-                    Some(current) => current + (measured - current) * SMOOTHING,
-                    None => measured,
-                };
-                self.tick_interval = Some(smoothed);
-                self.beat_seconds = smoothed * f32::from(TICKS_PER_BEAT);
+        self.history.push_back(at);
+        while self.history.len() > HISTORY {
+            self.history.pop_front();
+        }
+        if let (Some(&first), Some(&last)) = (self.history.front(), self.history.back()) {
+            let intervals = self.history.len().saturating_sub(1);
+            let span = last.saturating_duration_since(first).as_secs_f32();
+            if intervals > 0 && span > 0.0 {
+                #[allow(clippy::cast_precision_loss)]
+                let interval = span / intervals as f32;
+                self.tick_interval = Some(interval);
+                self.beat_seconds = interval * f32::from(TICKS_PER_BEAT);
             }
         }
         self.last_tick = Some(at);
-        self.ticks = (self.ticks + 1) % TICKS_PER_BEAT;
+        self.ticks += 1;
     }
 
     /// Whether the host is currently driving the clock.
@@ -74,19 +85,28 @@ impl Clock {
         }
     }
 
-    /// How far through the current beat `at` falls, in `0.0..1.0`.
+    /// Beats elapsed at `at`, counting up without wrapping.
+    ///
+    /// Effects with a period longer than one beat need the whole position, not just where in the
+    /// current beat we are.
     #[must_use]
-    pub fn phase(&self, at: Instant) -> f32 {
-        let phase = match (self.is_driven(at), self.last_tick, self.tick_interval) {
+    #[allow(clippy::cast_precision_loss)]
+    pub fn beats(&self, at: Instant) -> f32 {
+        match (self.is_driven(at), self.last_tick, self.tick_interval) {
             // Interpolate between ticks so the beat advances smoothly
             (true, Some(last), Some(interval)) if interval > 0.0 => {
                 let since = at.saturating_duration_since(last).as_secs_f32() / interval;
-                (f32::from(self.ticks) + since.min(1.0)) / f32::from(TICKS_PER_BEAT)
+                (self.ticks as f32 + since.min(1.0)) / f32::from(TICKS_PER_BEAT)
             }
-            (true, _, _) => f32::from(self.ticks) / f32::from(TICKS_PER_BEAT),
+            (true, _, _) => self.ticks as f32 / f32::from(TICKS_PER_BEAT),
             _ => at.saturating_duration_since(self.epoch).as_secs_f32() / self.beat_seconds,
-        };
-        phase.rem_euclid(1.0)
+        }
+    }
+
+    /// How far through the current beat `at` falls, in `0.0..1.0`.
+    #[must_use]
+    pub fn phase(&self, at: Instant) -> f32 {
+        self.beats(at).rem_euclid(1.0)
     }
 }
 
@@ -149,6 +169,26 @@ mod tests {
         }
         let mid = clock.phase(at);
         assert!((0.45..0.6).contains(&mid), "phase was {mid}");
+    }
+
+    /// Jitter on individual intervals must not move the reported tempo
+    #[test]
+    fn tempo_is_steady_under_jittery_ticks() {
+        let start = Instant::now();
+        let mut clock = Clock::new(start);
+        let gap = tick_gap(120.0).as_secs_f64();
+        let mut at = start;
+        let mut worst: f32 = 0.0;
+        // A deterministic wobble of about a quarter of the gap, alternating either way
+        for i in 0..(TICKS_PER_BEAT * 8) {
+            let wobble = if i % 2 == 0 { 0.25 } else { -0.25 };
+            at += Duration::from_secs_f64(gap * (1.0 + wobble));
+            clock.tick(at);
+            if i >= TICKS_PER_BEAT {
+                worst = worst.max((clock.bpm() - 120.0).abs());
+            }
+        }
+        assert!(worst < 2.0, "tempo drifted by {worst} bpm under jitter");
     }
 
     #[test]
