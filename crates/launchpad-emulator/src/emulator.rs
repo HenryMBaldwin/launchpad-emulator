@@ -3,12 +3,13 @@
 use std::marker::PhantomData;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use midir::os::unix::{VirtualInput, VirtualOutput};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
 use crate::message::{HostMessage, Interaction};
-use crate::{DeviceSpec, Error, Surface};
+use crate::{Clock, DeviceSpec, Error, Surface};
 
 /// Hardware connection shared with the callback that mirrors host traffic onto it.
 type Hardware = Arc<Mutex<Option<MidiOutputConnection>>>;
@@ -27,6 +28,7 @@ pub struct Emulator<S: DeviceSpec> {
     hardware_interactions: Receiver<Interaction>,
     hardware_sink: Sender<Interaction>,
     surface: Arc<Mutex<Surface>>,
+    clock: Arc<Mutex<Clock>>,
     device: PhantomData<S>,
 }
 
@@ -50,11 +52,13 @@ impl<S: DeviceSpec> Emulator<S> {
     /// Fails if a MIDI backend cannot be initialised or a virtual port cannot be created.
     pub fn new(port_name: &str) -> Result<Self, Error> {
         let surface = Arc::new(Mutex::new(Surface::new::<S>()));
+        let clock = Arc::new(Mutex::new(Clock::new(Instant::now())));
         let hardware_out: Hardware = Arc::new(Mutex::new(None));
         let (message_sink, host_messages) = channel();
         let (hardware_sink, hardware_interactions) = channel();
 
         let shared_surface = Arc::clone(&surface);
+        let shared_clock = Arc::clone(&clock);
         let shared_hardware = Arc::clone(&hardware_out);
         let from_host = MidiInput::new(port_name)?
             .create_virtual(
@@ -68,6 +72,11 @@ impl<S: DeviceSpec> Emulator<S> {
                     for message in S::decode(bytes) {
                         if let Ok(mut surface) = shared_surface.lock() {
                             surface.apply(&message);
+                        }
+                        if matches!(message, HostMessage::Clock)
+                            && let Ok(mut clock) = shared_clock.lock()
+                        {
+                            clock.tick(Instant::now());
                         }
                         // A closed receiver only means nothing is reading the log
                         let _ = message_sink.send(message);
@@ -94,6 +103,7 @@ impl<S: DeviceSpec> Emulator<S> {
             hardware_interactions,
             hardware_sink,
             surface,
+            clock,
             device: PhantomData,
         })
     }
@@ -116,6 +126,32 @@ impl<S: DeviceSpec> Emulator<S> {
         self.surface
             .lock()
             .map(|surface| surface.clone())
+            .map_err(|_| Error::Poisoned)
+    }
+
+    /// How far through the current beat we are, in `0.0..1.0`.
+    ///
+    /// Pass this to [`Surface::color_at`] so flashing and pulsing follow the host's tempo.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a thread holding the clock lock panicked.
+    pub fn phase(&self) -> Result<f32, Error> {
+        self.clock
+            .lock()
+            .map(|clock| clock.phase(Instant::now()))
+            .map_err(|_| Error::Poisoned)
+    }
+
+    /// Tempo in beats per minute, as the host's clock defines it.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a thread holding the clock lock panicked.
+    pub fn bpm(&self) -> Result<f32, Error> {
+        self.clock
+            .lock()
+            .map(|clock| clock.bpm())
             .map_err(|_| Error::Poisoned)
     }
 
