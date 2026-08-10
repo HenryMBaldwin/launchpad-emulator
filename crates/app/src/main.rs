@@ -1,5 +1,7 @@
 //! A standalone window presenting a Launchpad emulator as a virtual MIDI device.
 
+mod icon;
+
 use std::error::Error;
 use std::time::Duration;
 
@@ -75,6 +77,7 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
         // Without this the window reopens at whatever size it was last dragged to
         persist_window: false,
         viewport: ViewportBuilder::default()
+            .with_icon(icon::build())
             .with_inner_size([BOARD_SIZE, BOARD_SIZE + LOG_HEIGHT + 34.0])
             .with_min_inner_size([MIN_WIDTH, MIN_BOARD + MIN_LOG]),
         ..Default::default()

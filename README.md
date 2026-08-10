@@ -115,6 +115,11 @@ it who it is gets the same reply a real Launchpad gives: a universal device inqu
 brightness, the sleep state, the velocity curve and the aftertouch mode, plus the echo the hardware
 sends when the mode changes.
 
+## Window icon
+
+The icon is drawn in code from the pad colours, so the app ships no image files. To use a different
+one, replace `icon::build` in `crates/app`.
+
 ## Platform support
 
 Virtual MIDI ports are unavailable on Windows, so this crate does not build
