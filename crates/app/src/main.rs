@@ -200,7 +200,7 @@ impl<S: DeviceSpec> eframe::App for App<S> {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.pump();
 
-        let phase = self.emulator.phase().unwrap_or(0.0);
+        let beats = self.emulator.beats().unwrap_or(0.0);
         let bpm = self.emulator.bpm().unwrap_or(0.0);
         let Ok(surface) = self.emulator.surface() else {
             return;
@@ -214,7 +214,7 @@ impl<S: DeviceSpec> eframe::App for App<S> {
 
         let board = CentralPanel::default()
             .frame(Frame::NONE)
-            .show(ui, |ui| self.widget.show(ui, &self.layout, &surface, phase))
+            .show(ui, |ui| self.widget.show(ui, &self.layout, &surface, beats))
             .inner;
         self.send(board.inner);
 
