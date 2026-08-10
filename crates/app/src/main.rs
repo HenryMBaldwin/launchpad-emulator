@@ -85,7 +85,13 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
     eframe::run_native(
         S::NAME,
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            // Labels should appear the moment the pointer arrives, with no fade
+            cc.egui_ctx.all_styles_mut(|style| {
+                style.animation_time = 0.0;
+                style.interaction.tooltip_delay = 0.0;
+                style.interaction.tooltip_grace_time = 0.0;
+            });
             // The device's own names, with what each pad sends laid over the top
             let names = Labels::defaults::<S>();
             let numbers: Vec<_> = Pad::all(S::WIDTH, S::HEIGHT)

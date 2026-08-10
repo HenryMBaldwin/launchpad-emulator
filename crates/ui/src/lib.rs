@@ -313,7 +313,8 @@ impl LaunchpadUi {
             );
         }
 
-        // Anchored to the pointer, since the response covers the whole surface
+        // Anchored to the pointer, since the response covers the whole surface. How quickly it
+        // appears is the host's to set, through `animation_time` and `interaction.tooltip_delay`
         if let Some(label) = hovered.and_then(|pad| self.labels.get(pad)) {
             Tooltip::for_widget(&response)
                 .at_pointer()
