@@ -42,10 +42,10 @@ mod surface;
 pub use clock::{Clock, DEFAULT_BPM, TICKS_PER_BEAT};
 pub use color::Rgb;
 pub use emulator::Emulator;
-pub use message::{HostMessage, Interaction};
+pub use message::{HostMessage, Interaction, Query};
 pub use pad::Pad;
 pub use role::PadRole;
-pub use surface::{Lighting, MAX_BRIGHTNESS, Surface, TextScroll};
+pub use surface::{Lighting, MAX_BRIGHTNESS, Settings, Surface, TextScroll};
 
 /// The behaviour that differs between Launchpad models, implemented by a marker per device.
 pub trait DeviceSpec {
@@ -64,6 +64,10 @@ pub trait DeviceSpec {
     const PORT_NAME: &'static str;
     /// Whether the pads report how hard they were struck.
     const VELOCITY_SENSITIVE: bool;
+    /// Family code this model reports in a device inquiry response.
+    const FAMILY_CODE: u8;
+    /// Firmware version this emulator reports for itself.
+    const FIRMWARE_VERSION: [u8; 4];
 
     /// Converts a note or control change number into a pad.
     fn pad_from_midi(number: u8) -> Option<Pad>;
@@ -90,6 +94,11 @@ pub trait DeviceSpec {
 
     /// Encodes an interaction as this model's hardware would report it.
     fn encode(interaction: Interaction) -> Vec<u8>;
+
+    /// Builds the bytes this model's hardware would send in answer to a message from the host.
+    ///
+    /// Returns `None` for messages the hardware does not answer.
+    fn encode_reply(message: &HostMessage, surface: &Surface) -> Option<Vec<u8>>;
 }
 
 /// Errors from setting up or driving an emulator.

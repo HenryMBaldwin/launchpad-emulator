@@ -3,6 +3,7 @@
 use super::{mk3_family as family, palette};
 use crate::message::{HostMessage, Interaction};
 use crate::pad::Pad;
+use crate::surface::Surface;
 use crate::{DeviceSpec, PadRole, Rgb};
 
 /// Device ID this model answers to in `SysEx` messages.
@@ -19,6 +20,8 @@ impl DeviceSpec for LaunchpadMiniMk3 {
     const HARDWARE_KEYWORD: &'static str = "Launchpad Mini MK3 LPMiniMK3 MI";
     const PORT_NAME: &'static str = "Launchpad Mini MK3 LPMiniMK3 MIDI";
     const VELOCITY_SENSITIVE: bool = false;
+    const FAMILY_CODE: u8 = 0x13;
+    const FIRMWARE_VERSION: [u8; 4] = [0, 2, 8, 9];
 
     fn pad_from_midi(number: u8) -> Option<Pad> {
         family::pad_from_midi(number)
@@ -46,6 +49,20 @@ impl DeviceSpec for LaunchpadMiniMk3 {
 
     fn encode(interaction: Interaction) -> Vec<u8> {
         family::encode(interaction)
+    }
+
+    fn encode_reply(message: &HostMessage, surface: &Surface) -> Option<Vec<u8>> {
+        match message {
+            HostMessage::Query(query) => Some(family::encode_reply(
+                DEVICE_ID,
+                Self::FAMILY_CODE,
+                Self::FIRMWARE_VERSION,
+                *query,
+                surface,
+            )),
+            HostMessage::ProgrammerMode(on) => Some(family::encode_mode_echo(DEVICE_ID, *on)),
+            _ => None,
+        }
     }
 }
 

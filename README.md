@@ -80,6 +80,13 @@ cargo run --example drive
 cargo run --example loopback
 ```
 
+## Identifying as a Launchpad
+
+The emulator answers the queries the hardware answers, so a host that identifies a device by asking
+it who it is gets the same reply a real Launchpad gives: a universal device inquiry, the layout, the
+brightness, the sleep state, the velocity curve and the aftertouch mode, plus the echo the hardware
+sends when the mode changes.
+
 ## Platform support
 
 Virtual MIDI ports are unavailable on Windows, so this crate does not build

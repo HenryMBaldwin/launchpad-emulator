@@ -23,10 +23,43 @@ pub enum HostMessage {
     StartScroll(TextScroll),
     /// End any running text scroll.
     StopScroll,
+    /// Change the velocity curve and the fixed velocity that goes with it.
+    SetVelocityCurve {
+        /// Which curve to use.
+        curve: u8,
+        /// Velocity reported while the curve is the fixed one.
+        fixed_velocity: u8,
+    },
+    /// Change how held pads report pressure.
+    SetAftertouch {
+        /// Report per pad or once for the whole grid.
+        mode: u8,
+        /// Pressure needed before reporting starts.
+        threshold: u8,
+    },
+    /// Something the host wants reported back.
+    Query(Query),
     /// A MIDI beat clock tick, 24 per beat.
     Clock,
     /// Bytes that did not parse as anything the surface reacts to.
     Unrecognised(Vec<u8>),
+}
+
+/// A request for the device to report something about itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Query {
+    /// Identity and firmware version, asked with a universal device inquiry.
+    DeviceInquiry,
+    /// Which layout is selected.
+    Layout,
+    /// The velocity curve and fixed velocity.
+    VelocityCurve,
+    /// The aftertouch mode and threshold.
+    Aftertouch,
+    /// The overall LED brightness.
+    Brightness,
+    /// Whether the LEDs are switched off.
+    Sleep,
 }
 
 /// An interaction reported from a device back to the host.
