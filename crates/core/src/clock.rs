@@ -12,8 +12,11 @@ pub const DEFAULT_BPM: f32 = 120.0;
 /// How long a tick-driven clock keeps running after the ticks stop.
 const TIMEOUT: Duration = Duration::from_millis(750);
 
-/// Ticks kept to measure tempo across, one beat's worth of intervals.
-const HISTORY: usize = TICKS_PER_BEAT as usize + 1;
+/// Beats of ticks kept to measure tempo across.
+const HISTORY_BEATS: usize = 4;
+
+/// Ticks kept to measure tempo across.
+const HISTORY: usize = HISTORY_BEATS * TICKS_PER_BEAT as usize + 1;
 
 /// Tracks the beat that flashing and pulsing are synchronised to.
 ///
@@ -180,11 +183,11 @@ mod tests {
         let mut at = start;
         let mut worst: f32 = 0.0;
         // A deterministic wobble of about a quarter of the gap, alternating either way
-        for i in 0..(TICKS_PER_BEAT * 8) {
+        for i in 0..(TICKS_PER_BEAT * 16) {
             let wobble = if i % 2 == 0 { 0.25 } else { -0.25 };
             at += Duration::from_secs_f64(gap * (1.0 + wobble));
             clock.tick(at);
-            if i >= TICKS_PER_BEAT {
+            if i as usize >= HISTORY {
                 worst = worst.max((clock.bpm() - 120.0).abs());
             }
         }
