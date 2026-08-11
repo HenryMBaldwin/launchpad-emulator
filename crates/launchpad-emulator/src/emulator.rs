@@ -304,6 +304,49 @@ impl<S: DeviceSpec> Emulator<S> {
         self.to_host.lock().is_ok_and(|port| port.is_some())
     }
 
+    /// Forgets any attached hardware, leaving the host ports alone.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a lock is poisoned.
+    pub fn detach_hardware(&mut self) -> Result<(), Error> {
+        *self.hardware_out.lock().map_err(|_| Error::Poisoned)? = None;
+        self.hardware_in = None;
+        Ok(())
+    }
+
+    /// Whether this model's hardware is plugged in, attached or not.
+    #[must_use]
+    pub fn hardware_present(&self) -> bool {
+        let Ok(output) = MidiOutput::new("launchpad-emulator") else {
+            return false;
+        };
+        find_port(&output, S::HARDWARE_KEYWORD, self.port_name.as_deref()).is_some()
+    }
+
+    /// Attaches hardware that has appeared, and forgets hardware that has gone.
+    ///
+    /// Call this now and then to follow the device being plugged in and pulled out. Returns whether
+    /// hardware is attached afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a lock is poisoned or an appearing device cannot be opened.
+    pub fn refresh_hardware(&mut self) -> Result<bool, Error> {
+        match (self.hardware_attached(), self.hardware_present()) {
+            (false, true) => {
+                self.attach_hardware()?;
+                tracing::info!("hardware attached");
+            }
+            (true, false) => {
+                self.detach_hardware()?;
+                tracing::info!("hardware went away");
+            }
+            _ => {}
+        }
+        Ok(self.hardware_attached())
+    }
+
     /// Whether real hardware is attached.
     #[must_use]
     pub fn hardware_attached(&self) -> bool {
@@ -499,6 +542,15 @@ mod tests {
             let matched = name.contains(keyword) && Some(name) != ours;
             assert_eq!(matched, is_hardware, "for {name:?}");
         }
+    }
+
+    #[test]
+    fn an_in_process_emulator_has_no_hardware_to_forget() -> Result<(), Error> {
+        let mut emulator = Emulator::<LaunchpadX>::in_process();
+        assert!(!emulator.hardware_attached());
+        emulator.detach_hardware()?;
+        assert!(!emulator.hardware_attached(), "detaching twice is harmless");
+        Ok(())
     }
 
     #[test]
