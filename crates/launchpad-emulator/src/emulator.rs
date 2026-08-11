@@ -280,6 +280,9 @@ impl<S: DeviceSpec> Emulator<S> {
 
         let input = MidiInput::new("launchpad-emulator")?;
         let port = find_port(&input, S::HARDWARE_KEYWORD, ours).ok_or_else(not_found)?;
+        // A device attached after the host set things up has missed everything so far
+        self.resync_hardware()?;
+
         let sink = self.hardware_sink.clone();
         self.hardware_in = Some(
             input
@@ -302,6 +305,22 @@ impl<S: DeviceSpec> Emulator<S> {
     #[must_use]
     pub fn publishes_ports(&self) -> bool {
         self.to_host.lock().is_ok_and(|port| port.is_some())
+    }
+
+    /// Brings attached hardware up to the surface the host has built.
+    ///
+    /// Sends the mode and then every pad, so a device attached partway through matches what the
+    /// emulator is showing. Flashing and pulsing pads are sent as the colour they are showing.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a lock is poisoned or the write fails.
+    pub fn resync_hardware(&mut self) -> Result<(), Error> {
+        let surface = self.surface()?;
+        for message in S::encode_state(&surface) {
+            self.send_to_hardware(&message)?;
+        }
+        Ok(())
     }
 
     /// Forgets any attached hardware, leaving the host ports alone.
