@@ -60,6 +60,13 @@ impl DeviceSpec for LaunchpadMiniMk3 {
         family::encode(interaction)
     }
 
+    fn encode_state(surface: &Surface) -> Vec<Vec<u8>> {
+        vec![
+            family::encode_mode_echo(DEVICE_ID, surface.is_programmer_mode()),
+            family::encode_surface(DEVICE_ID, surface),
+        ]
+    }
+
     fn encode_reply(message: &HostMessage, surface: &Surface) -> Option<Vec<u8>> {
         match message {
             HostMessage::Query(query) => Some(family::encode_reply(
