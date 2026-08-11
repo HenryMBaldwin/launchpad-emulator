@@ -104,6 +104,9 @@ pub trait DeviceSpec {
     /// Encodes an interaction as this model's hardware would report it.
     fn encode(interaction: Interaction) -> Vec<u8>;
 
+    /// Builds the messages that bring a freshly attached device up to `surface`.
+    fn encode_state(surface: &Surface) -> Vec<Vec<u8>>;
+
     /// Builds the bytes this model's hardware would send in answer to a message from the host.
     ///
     /// Returns `None` for messages the hardware does not answer.

@@ -286,6 +286,25 @@ pub fn encode_reply(
     bytes
 }
 
+/// Builds a lighting `SysEx` painting every pad of `surface`.
+///
+/// Flashing and pulsing pads are sent as the colour they are showing, since the palette entry they
+/// were set from is not kept.
+#[must_use]
+pub fn encode_surface(device_id: u8, surface: &Surface) -> Vec<u8> {
+    let mut bytes = sysex_header(device_id).to_vec();
+    bytes.push(CMD_LED);
+    for pad in Pad::all(SIZE, SIZE) {
+        let Some(number) = pad_to_midi(pad) else {
+            continue;
+        };
+        let [r, g, b] = surface.lighting(pad).color_at(0.0).to_midi();
+        bytes.extend_from_slice(&[3, number, r, g, b]);
+    }
+    bytes.push(SYSEX_END);
+    bytes
+}
+
 /// Builds the echo the hardware sends when the host changes the mode.
 #[must_use]
 pub fn encode_mode_echo(device_id: u8, programmer: bool) -> Vec<u8> {

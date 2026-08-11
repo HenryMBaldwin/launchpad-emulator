@@ -33,6 +33,12 @@ impl Rgb {
         })
     }
 
+    /// The three 7-bit channels a Launchpad X RGB message carries.
+    #[must_use]
+    pub const fn to_midi(self) -> [u8; 3] {
+        [narrow(self.r), narrow(self.g), narrow(self.b)]
+    }
+
     /// This colour with every channel multiplied by `level`, which is clamped to `0.0..=1.0`.
     #[must_use]
     pub fn scaled(self, level: f32) -> Self {
@@ -45,10 +51,14 @@ impl Rgb {
     }
 }
 
-/// Widens a 7-bit channel so that 127 maps to 255.
-#[allow(clippy::cast_possible_truncation)]
+/// Widens a 7-bit channel so that 127 maps to 255, exactly reversing [`narrow`].
 const fn scale_up(value: u8) -> u8 {
-    ((value as u16 * 255) / 127) as u8
+    (value << 1) | (value >> 6)
+}
+
+/// Narrows an 8-bit channel so that 255 maps to 127.
+const fn narrow(value: u8) -> u8 {
+    value >> 1
 }
 
 /// Multiplies a channel by a level already clamped to `0.0..=1.0`.
@@ -58,6 +68,7 @@ fn scale(value: u8, level: f32) -> u8 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -68,6 +79,18 @@ mod tests {
             Some(Rgb { r: 255, g: 0, b: 0 })
         );
         assert_eq!(Rgb::from_midi(&[0, 0, 0]), Some(Rgb::BLACK));
+    }
+
+    #[test]
+    fn channels_survive_a_round_trip_to_the_wire() {
+        for channel in [0u8, 1, 63, 64, 126, 127] {
+            let color = Rgb::from_midi(&[channel, channel, channel]).unwrap_or(Rgb::BLACK);
+            assert_eq!(
+                color.to_midi(),
+                [channel, channel, channel],
+                "for {channel}"
+            );
+        }
     }
 
     #[test]
