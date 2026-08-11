@@ -172,7 +172,7 @@ impl<S: DeviceSpec> App<S> {
             ui.label(format!("{bpm:.0} bpm"));
             ui.separator();
             ui.label(if self.hardware {
-                "hardware mirrored"
+                "hardware attached"
             } else {
                 "no hardware"
             });
