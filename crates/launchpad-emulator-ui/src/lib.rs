@@ -582,8 +582,8 @@ mod tests {
         assert_eq!(labels.get(Pad::new(0, 0)), Some("Up"));
         assert_eq!(labels.get(Pad::new(7, 0)), Some("Capture MIDI"));
         assert_eq!(labels.get(Pad::new(8, 0)), Some("Logo"));
-        assert_eq!(labels.get(Pad::new(8, 1)), Some("Scene Launch 1"));
-        assert_eq!(labels.get(Pad::new(8, 8)), Some("Scene Launch 8"));
+        assert_eq!(labels.get(Pad::new(8, 1)), Some("Volume"));
+        assert_eq!(labels.get(Pad::new(8, 8)), Some("Record Arm"));
         assert_eq!(
             labels.get(Pad::new(0, 1)),
             Some("Grid 0,0"),

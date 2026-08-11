@@ -99,27 +99,20 @@ pub const fn role(pad: Pad) -> PadRole {
     }
 }
 
-/// Names printed beside the right-hand column, top first.
-const SCENE_LAUNCH: [&str; 8] = [
-    "Scene Launch 1",
-    "Scene Launch 2",
-    "Scene Launch 3",
-    "Scene Launch 4",
-    "Scene Launch 5",
-    "Scene Launch 6",
-    "Scene Launch 7",
-    "Scene Launch 8",
-];
-
-/// The name printed on a pad, given what this model's top row says.
+/// The name printed on a pad, given what this model's edges say.
 ///
-/// Grid pads carry no printing, so they return `None`.
+/// `top_row` reads left to right and `side` reads top to bottom. Grid pads carry no printing, so
+/// they return `None`.
 #[must_use]
-pub fn printed_name(pad: Pad, top_row: &[&'static str; 8]) -> Option<&'static str> {
+pub fn printed_name(
+    pad: Pad,
+    top_row: &[&'static str; 8],
+    side: &[&'static str; 8],
+) -> Option<&'static str> {
     match role(pad) {
         PadRole::Logo => Some("Logo"),
         PadRole::Control if pad.y == 0 => top_row.get(pad.x as usize).copied(),
-        PadRole::Control => SCENE_LAUNCH.get((pad.y - 1) as usize).copied(),
+        PadRole::Control => side.get((pad.y - 1) as usize).copied(),
         PadRole::Grid | PadRole::Absent => None,
     }
 }

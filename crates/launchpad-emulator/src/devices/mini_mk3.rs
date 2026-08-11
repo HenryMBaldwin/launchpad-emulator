@@ -11,6 +11,18 @@ const TOP_ROW: [&str; 8] = [
     "Up", "Down", "Left", "Right", "Session", "Drums", "Keys", "User",
 ];
 
+/// Words printed beside the right-hand column, top first.
+const SIDE_COLUMN: [&str; 8] = [
+    "Volume",
+    "Pan",
+    "Send A",
+    "Send B",
+    "Stop Clip",
+    "Mute",
+    "Solo",
+    "Record Arm",
+];
+
 /// Device ID this model answers to in `SysEx` messages.
 pub const DEVICE_ID: u8 = 0x0D;
 
@@ -41,7 +53,7 @@ impl DeviceSpec for LaunchpadMiniMk3 {
     }
 
     fn printed_name(pad: Pad) -> Option<&'static str> {
-        family::printed_name(pad, &TOP_ROW)
+        family::printed_name(pad, &TOP_ROW, &SIDE_COLUMN)
     }
 
     fn palette(entry: u8) -> Option<Rgb> {
