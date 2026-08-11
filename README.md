@@ -39,9 +39,10 @@ cargo run --bin launchpad-emulator -- --port "My Pad"   # a name of your own
 ```
 
 The virtual ports are named after the hardware, so a host that discovers a
-Launchpad by port name finds the emulator. With real hardware attached as well
-the match is ambiguous and the host may pick either, so select the port
-explicitly in that case.
+Launchpad by port name finds the emulator. With real hardware attached as well,
+the hardware's own ports extend the emulator's name and are listed first, so a
+host matching on a substring reaches the hardware instead. Match the port name
+exactly, or select it by hand.
 
 Clicking a pad reports a press, holding one ramps aftertouch pressure, and
 resting the pointer on one shows its label.
