@@ -29,6 +29,9 @@ const PULSE_FLOOR: f32 = 0.25;
 /// Fraction of a pulse period spent rising, half a beat of the two.
 const PULSE_RISE: f32 = 0.25;
 
+/// Beats the pulse is shifted by to peak where the hardware's does.
+const PULSE_OFFSET: f32 = 1.0;
+
 impl Lighting {
     /// The colour to draw at `beats` elapsed.
     ///
@@ -51,7 +54,7 @@ impl Lighting {
 
 /// Brightness of a pulse at `beats` elapsed, rising quickly then falling away.
 fn pulse_level(beats: f32) -> f32 {
-    let phase = (beats / 2.0).rem_euclid(1.0);
+    let phase = ((beats + PULSE_OFFSET) * 0.5).rem_euclid(1.0);
     let climb = if phase < PULSE_RISE {
         phase / PULSE_RISE
     } else {
@@ -493,14 +496,21 @@ mod tests {
     /// The manual's waveform: two beats long, from a quarter brightness up to full
     #[test]
     fn pulsing_spans_two_beats_and_never_goes_dark() {
-        assert!((pulse_level(0.0) - PULSE_FLOOR).abs() < 0.001);
         assert!(
-            (pulse_level(0.5) - 1.0).abs() < 0.001,
-            "peaks half a beat in"
+            (pulse_level(1.0) - PULSE_FLOOR).abs() < 0.001,
+            "dimmest on the beat"
         );
         assert!(
-            (pulse_level(2.0) - PULSE_FLOOR).abs() < 0.001,
-            "repeats every two beats"
+            (pulse_level(1.5) - 1.0).abs() < 0.001,
+            "peaks half a beat later"
+        );
+        assert!(
+            (pulse_level(3.0) - PULSE_FLOOR).abs() < 0.001,
+            "and again two beats on"
+        );
+        assert!(
+            (pulse_level(3.5) - 1.0).abs() < 0.001,
+            "repeating every two beats"
         );
         for beats in [0.0, 0.3, 0.7, 1.1, 1.9, 2.4, 3.8] {
             let level = pulse_level(beats);
@@ -509,7 +519,7 @@ mod tests {
                 "level {level} at {beats} beats"
             );
         }
-        assert_eq!(Lighting::Pulsing(RED).color_at(0.5), RED);
-        assert_ne!(Lighting::Pulsing(RED).color_at(0.0), Rgb::BLACK);
+        assert_eq!(Lighting::Pulsing(RED).color_at(1.5), RED);
+        assert_ne!(Lighting::Pulsing(RED).color_at(1.0), Rgb::BLACK);
     }
 }
