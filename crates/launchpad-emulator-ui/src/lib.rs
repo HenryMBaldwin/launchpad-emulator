@@ -18,7 +18,7 @@
 
 mod console;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use egui::{Color32, CornerRadius, InnerResponse, Pos2, Rect, Response, Sense, Tooltip, Ui, Vec2};
 use launchpad_emulator::{DeviceSpec, Interaction, Pad, PadRole, Rgb, Surface};
@@ -218,6 +218,8 @@ pub struct LaunchpadUi {
     velocity: u8,
     aftertouch_on_hold: bool,
     held: Option<Held>,
+    /// Pads held by something other than the pointer, such as attached hardware.
+    pressed: BTreeSet<Pad>,
     labels: Labels,
 }
 
@@ -235,8 +237,29 @@ impl LaunchpadUi {
             velocity: 127,
             aftertouch_on_hold: true,
             held: None,
+            pressed: BTreeSet::new(),
             labels: Labels::none(),
         }
+    }
+
+    /// Shows a press that came from somewhere else, such as attached hardware.
+    ///
+    /// The pad is outlined as though the pointer were on it until its release arrives.
+    pub fn apply(&mut self, interaction: Interaction) {
+        match interaction {
+            Interaction::Press { pad, .. } => {
+                self.pressed.insert(pad);
+            }
+            Interaction::Release { pad } => {
+                self.pressed.remove(&pad);
+            }
+            Interaction::Aftertouch { .. } => {}
+        }
+    }
+
+    /// Forgets every press that came from somewhere else.
+    pub fn clear_pressed(&mut self) {
+        self.pressed.clear();
     }
 
     /// Replaces the labels shown on hover.
@@ -310,12 +333,13 @@ impl LaunchpadUi {
             let rect = cell_rect(board, cell, pad);
             draw_pad(&painter, rect, cell, role, color);
         }
-        if let Some(held) = self.held {
+        let under_pointer = self.held.map(|held| held.pad);
+        for pad in under_pointer.iter().chain(&self.pressed) {
             outline(
                 &painter,
-                cell_rect(board, cell, held.pad),
+                cell_rect(board, cell, *pad),
                 cell,
-                layout.role(held.pad),
+                layout.role(*pad),
             );
         }
 
@@ -522,6 +546,34 @@ mod tests {
         assert_eq!(ramp(RAMP_SECONDS / 2.0), 64);
         assert_eq!(ramp(RAMP_SECONDS), 127);
         assert_eq!(ramp(10.0), 127);
+    }
+
+    #[test]
+    fn presses_from_elsewhere_are_held_until_released() {
+        let mut widget = LaunchpadUi::new();
+        let pad = Pad::new(3, 4);
+        widget.apply(Interaction::Press { pad, velocity: 90 });
+        assert!(widget.pressed.contains(&pad));
+
+        widget.apply(Interaction::Aftertouch { pad, pressure: 40 });
+        assert!(widget.pressed.contains(&pad), "aftertouch keeps it held");
+
+        widget.apply(Interaction::Release { pad });
+        assert!(!widget.pressed.contains(&pad));
+    }
+
+    #[test]
+    fn several_pads_can_be_held_at_once() {
+        let mut widget = LaunchpadUi::new();
+        for x in 0..3 {
+            widget.apply(Interaction::Press {
+                pad: Pad::new(x, 1),
+                velocity: 90,
+            });
+        }
+        assert_eq!(widget.pressed.len(), 3);
+        widget.clear_pressed();
+        assert!(widget.pressed.is_empty());
     }
 
     #[test]
