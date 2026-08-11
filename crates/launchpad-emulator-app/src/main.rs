@@ -3,7 +3,7 @@
 mod icon;
 
 use std::error::Error;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{CentralPanel, Frame, Key, Panel, Slider, Ui, ViewportBuilder};
 use launchpad_emulator::devices::{LaunchpadMiniMk3, LaunchpadX};
@@ -12,6 +12,9 @@ use launchpad_emulator_ui::{Console, Labels, LaunchpadUi, Layout};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
+
+/// How often the hardware is looked for.
+const HARDWARE_CHECK: Duration = Duration::from_secs(1);
 
 /// Height of the bars above and below the surface with the console hidden.
 const CHROME: f32 = 72.0;
@@ -76,7 +79,7 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
         Some(name) => Emulator::<S>::new(name)?,
         None => Emulator::<S>::with_default_name()?,
     };
-    let hardware = emulator.attach_hardware().is_ok();
+    let hardware = emulator.refresh_hardware().unwrap_or(false);
     tracing::info!(device = S::NAME, hardware, "ready");
 
     let options = eframe::NativeOptions {
@@ -112,6 +115,7 @@ fn run<S: DeviceSpec + 'static>(port: Option<&str>) -> Result<(), Box<dyn Error>
                 widget,
                 emulator,
                 hardware,
+                checked: Instant::now(),
                 console: console.clone(),
                 decoded: 0,
             }))
@@ -126,6 +130,8 @@ struct App<S: DeviceSpec> {
     layout: Layout,
     widget: LaunchpadUi,
     hardware: bool,
+    /// When the hardware was last looked for.
+    checked: Instant,
     console: Console,
     decoded: usize,
 }
@@ -141,6 +147,8 @@ impl<S: DeviceSpec> App<S> {
             Ok(interactions) => {
                 for interaction in interactions {
                     tracing::info!(?interaction, "hardware");
+                    // Show it on the surface the way a click is shown
+                    self.widget.apply(interaction);
                 }
             }
             Err(error) => tracing::warn!(%error, "could not read the hardware"),
@@ -217,6 +225,14 @@ impl<S: DeviceSpec> eframe::App for App<S> {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.pump();
         let _ = self.emulator.advance();
+        // The device may be plugged in or pulled out while we are running
+        if self.checked.elapsed() >= HARDWARE_CHECK {
+            self.checked = Instant::now();
+            match self.emulator.refresh_hardware() {
+                Ok(attached) => self.hardware = attached,
+                Err(error) => tracing::warn!(%error, "could not look for the hardware"),
+            }
+        }
 
         let beats = self.emulator.beats().unwrap_or(0.0);
         let bpm = self.emulator.bpm().unwrap_or(0.0);
