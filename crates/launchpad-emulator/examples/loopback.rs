@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let source = input
         .ports()
         .into_iter()
-        .find(|p| input.port_name(p).is_ok_and(|n| n.contains(PORT)))
+        .find(|p| input.port_name(p).is_ok_and(|n| n == PORT))
         .ok_or("the emulator's port did not appear")?;
     let (sender, received) = channel();
     let _listener = input.connect(
@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let destination = output
         .ports()
         .into_iter()
-        .find(|p| output.port_name(p).is_ok_and(|n| n.contains(PORT)))
+        .find(|p| output.port_name(p).is_ok_and(|n| n == PORT))
         .ok_or("the emulator's destination did not appear")?;
     let mut host = output.connect(&destination, "loopback-host")?;
     host.send(&[0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7])?;

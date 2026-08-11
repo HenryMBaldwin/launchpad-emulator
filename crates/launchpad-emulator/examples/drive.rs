@@ -11,14 +11,16 @@ use launchpad_emulator::devices::{LaunchpadX, mk3_family, x};
 use midir::{MidiInput, MidiOutput, MidiOutputConnection};
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // Exactly, not by substring: the hardware's own ports extend the emulator's name and come
+    // first in the list, so a substring would drive the hardware instead
     let wanted = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "Launchpad X".into());
+        .unwrap_or_else(|| LaunchpadX::PORT_NAME.to_owned());
     let output = MidiOutput::new("drive")?;
     let port = output
         .ports()
         .into_iter()
-        .find(|p| output.port_name(p).is_ok_and(|n| n.contains(&wanted)))
+        .find(|p| output.port_name(p).is_ok_and(|n| n == wanted))
         .ok_or_else(|| format!("no MIDI port matching {wanted:?}"))?;
     println!("driving {:?}", output.port_name(&port)?);
     let mut host = output.connect(&port, "drive")?;
@@ -28,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let source = input
         .ports()
         .into_iter()
-        .find(|p| input.port_name(p).is_ok_and(|n| n.contains(&wanted)))
+        .find(|p| input.port_name(p).is_ok_and(|n| n == wanted))
         .ok_or_else(|| format!("no MIDI source matching {wanted:?}"))?;
     let listener = input.connect(
         &source,
