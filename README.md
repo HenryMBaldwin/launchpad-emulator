@@ -32,10 +32,11 @@ based on the existing code and I'll happily merge.
 
 ## Running
 
-```
-cargo run --bin launchpad-emulator                      # Launchpad X
-cargo run --bin launchpad-emulator mini-mk3             # Launchpad Mini MK3
-cargo run --bin launchpad-emulator -- --port "My Pad"   # a name of your own
+```bash
+just run                                                # Launchpad X
+cargo run --bin launchpad-emulator-app                      # Launchpad X
+cargo run --bin launchpad-emulator-app mini-mk3             # Launchpad Mini MK3
+cargo run --bin launchpad-emulator-app -- --port "My Pad"   # a name of your own
 ```
 
 The virtual ports are named after the hardware, so a host that discovers a
@@ -109,8 +110,9 @@ Labels are drawn as egui tooltips, and are tweaked the same way.
 
 ### Console
 
-`Console` records what the host has sent, stamped with the time it arrived. It starts hidden and
-draws nothing until shown, so a front end can call `show` unconditionally.
+`Console` records what the host has sent, stamped with the time it arrived. It
+starts hidden and draws nothing until shown, so a front end can call `show`
+unconditionally.
 
 ```rust
 use launchpad_emulator_ui::Console;
@@ -119,11 +121,11 @@ let mut console = Console::new().with_visible(true).with_limit(500);
 console.push("connected");
 ```
 
-`record` takes a `HostMessage` and skips the lighting and clock messages that arrive continuously.
-`push` takes any line.
+`record` takes a `HostMessage` and skips the lighting and clock messages that
+arrive continuously. `push` takes any line.
 
-`Console::layer` is a `tracing` layer, so installing it puts every event in the program on screen,
-including events from crates the front end brings itself:
+`Console::layer` is a `tracing` layer, so installing it puts every event in the
+program on screen, including events from crates the front end brings itself:
 
 ```rust
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -140,7 +142,7 @@ there.
 
 Linux needs the ALSA development headers:
 
-```
+```bash
 sudo apt-get install libasound2-dev
 ```
 
@@ -158,7 +160,7 @@ host, lighting a pattern, scrolling text and sending a beat clock; `loopback`
 checks that interactions reach a host and that queries are answered; `smoke`
 drives the surface and prints it as coloured blocks.
 
-```
+```bash
 cargo run --example drive
 cargo run --example loopback
 cargo run --example smoke
