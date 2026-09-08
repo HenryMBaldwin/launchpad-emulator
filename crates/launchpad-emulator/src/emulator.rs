@@ -13,9 +13,27 @@ use crate::{Clock, DeviceSpec, Error, Surface};
 
 /// A MIDI output shared with the callback that writes to it.
 type SharedOutput = Arc<Mutex<Option<MidiOutputConnection>>>;
+type Reported = Arc<Mutex<Vec<Interaction>>>;
 
 /// Replies queued for a host that has no MIDI port to receive them on.
 type Replies = Arc<Mutex<Vec<Vec<u8>>>>;
+
+/// Sends one interaction to the host, holding it back when no port is open.
+///
+/// Runs inside a MIDI callback, where a poisoned lock is dropped in silence.
+fn report<S: DeviceSpec>(interaction: Interaction, to_host: &SharedOutput, reported: &Reported) {
+    let Ok(mut port) = to_host.lock() else { return };
+    match port.as_mut() {
+        Some(port) => {
+            let _ = port.send(&S::encode(interaction));
+        }
+        None => {
+            if let Ok(mut held) = reported.lock() {
+                held.push(interaction);
+            }
+        }
+    }
+}
 
 /// A Launchpad an application can drive, over MIDI or in process.
 ///
@@ -28,7 +46,7 @@ pub struct Emulator<S: DeviceSpec> {
     /// Sends what the emulator reports; named from the host's point of view.
     to_host: SharedOutput,
     /// Interactions waiting to be drained when there is no host port to write to.
-    reported: Vec<Interaction>,
+    reported: Reported,
     /// Replies waiting to be drained when there is no host port to write to.
     replies: Replies,
     hardware_out: SharedOutput,
@@ -109,7 +127,7 @@ impl<S: DeviceSpec> Emulator<S> {
         Ok(Self {
             _from_host: Some(from_host),
             to_host,
-            reported: Vec::new(),
+            reported: Arc::new(Mutex::new(Vec::new())),
             hardware_out,
             hardware_in: None,
             host_messages,
@@ -146,7 +164,7 @@ impl<S: DeviceSpec> Emulator<S> {
         Self {
             _from_host: None,
             to_host: Arc::new(Mutex::new(None)),
-            reported: Vec::new(),
+            reported: Arc::new(Mutex::new(Vec::new())),
             replies: Arc::new(Mutex::new(Vec::new())),
             hardware_out: Arc::new(Mutex::new(None)),
             hardware_in: None,
@@ -197,7 +215,10 @@ impl<S: DeviceSpec> Emulator<S> {
     /// Only fills up when there is no host port to write to, so this is empty for an emulator made
     /// by [`Self::new`].
     pub fn reported(&mut self) -> Vec<Interaction> {
-        std::mem::take(&mut self.reported)
+        self.reported
+            .lock()
+            .map(|mut held| std::mem::take(&mut *held))
+            .unwrap_or_default()
     }
 
     /// The lighting state built from everything the host has sent.
@@ -284,6 +305,8 @@ impl<S: DeviceSpec> Emulator<S> {
         self.resync_hardware()?;
 
         let sink = self.hardware_sink.clone();
+        let to_host = Arc::clone(&self.to_host);
+        let reported = Arc::clone(&self.reported);
         self.hardware_in = Some(
             input
                 .connect(
@@ -291,6 +314,7 @@ impl<S: DeviceSpec> Emulator<S> {
                     "launchpad-emulator-in",
                     move |_timestamp, bytes, ()| {
                         if let Some(interaction) = S::decode_interaction(bytes) {
+                            report::<S>(interaction, &to_host, &reported);
                             let _ = sink.send(interaction);
                         }
                     },
@@ -388,7 +412,11 @@ impl<S: DeviceSpec> Emulator<S> {
         }
         match self.to_host.lock().map_err(|_| Error::Poisoned)?.as_mut() {
             Some(port) => port.send(&bytes)?,
-            None => self.reported.push(interaction),
+            None => self
+                .reported
+                .lock()
+                .map_err(|_| Error::Poisoned)?
+                .push(interaction),
         }
         Ok(())
     }
@@ -398,22 +426,15 @@ impl<S: DeviceSpec> Emulator<S> {
         self.host_messages.try_iter().collect()
     }
 
-    /// Drains interactions from attached hardware and reports them to the host.
+    /// Takes what attached hardware has done since the last call, oldest first.
+    ///
+    /// The host already has these; they are sent as they arrive.
     ///
     /// # Errors
     ///
-    /// Fails if the MIDI write to the host fails.
+    /// Never. The result is kept for callers written against the earlier signature.
     pub fn pump_hardware(&mut self) -> Result<Vec<Interaction>, Error> {
-        let pending: Vec<Interaction> = self.hardware_interactions.try_iter().collect();
-        let mut port = self.to_host.lock().map_err(|_| Error::Poisoned)?;
-        for interaction in &pending {
-            match port.as_mut() {
-                Some(port) => port.send(&S::encode(*interaction))?,
-                None => self.reported.push(*interaction),
-            }
-        }
-        drop(port);
-        Ok(pending)
+        Ok(self.hardware_interactions.try_iter().collect())
     }
 
     /// Sends raw bytes to attached hardware, doing nothing when none is attached.
@@ -544,6 +565,45 @@ mod tests {
         assert!(
             emulator.reported().is_empty(),
             "draining should consume them"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_press_from_hardware_reaches_the_host_without_being_pumped() {
+        let mut emulator = Emulator::<LaunchpadX>::in_process();
+        let press = Interaction::Press {
+            pad: Pad::new(3, 4),
+            velocity: 100,
+        };
+
+        // What the hardware callback does, with nothing draining after it.
+        report::<LaunchpadX>(press, &emulator.to_host, &emulator.reported);
+
+        assert_eq!(
+            emulator.reported(),
+            vec![press],
+            "the host has it before anyone asked"
+        );
+    }
+
+    #[test]
+    fn pumping_does_not_report_a_press_a_second_time() -> Result<(), Error> {
+        let mut emulator = Emulator::<LaunchpadX>::in_process();
+        let press = Interaction::Press {
+            pad: Pad::new(1, 1),
+            velocity: 100,
+        };
+
+        // The callback reports it and leaves it for the window to see.
+        report::<LaunchpadX>(press, &emulator.to_host, &emulator.reported);
+        let _ = emulator.hardware_sink.send(press);
+
+        assert_eq!(emulator.pump_hardware()?, vec![press], "the window sees it");
+        assert_eq!(
+            emulator.reported(),
+            vec![press],
+            "and it was reported once, not twice"
         );
         Ok(())
     }
